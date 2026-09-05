@@ -1,6 +1,7 @@
 import {
   ACESFilmicToneMapping,
   Clock,
+  DirectionalLight,
   PCFSoftShadowMap,
   PerspectiveCamera,
   Scene,
@@ -265,23 +266,59 @@ export class Game {
   }
 
   private riderStanding = false;
+  /** Character-screen studio lights: key from the camera side, cool fill from the other. */
+  private riderKey = new DirectionalLight(0xfff1dc, 0);
+  private riderFill = new DirectionalLight(0xc4d4ff, 0);
+  private riderLightsAdded = false;
 
   private standRider(): void {
     const p = this.physics;
-    // Stand 1.4 m to the rider's right of the parked bike, facing the camera side.
+    // Stand 1.5 m to the rider's right of the parked bike ...
     const right = new Vector3(-p.forward.z, 0, p.forward.x);
     const pos = p.position.clone().addScaledVector(right, 1.5).addScaledVector(p.forward, -0.2);
     pos.y = this.world.heightAt(pos.x, pos.z);
+    // ... facing the sun, so the camera (placed along the facing direction) has the sun behind
+    // it and the face is lit instead of silhouetted against the flare.
+    const sun = this.world.atmosphere.sunDir;
+    const horiz = Math.hypot(sun.x, sun.z);
+    let ry = horiz > 0.05 ? Math.atan2(sun.x, sun.z) : p.heading + Math.PI / 2 + 0.35;
+    // Keep the bike in frame behind the rider: nudge the facing towards the road-side view.
+    ry += 0.15;
     this.scene.add(this.rider.root);
     this.rider.root.position.copy(pos);
-    this.rider.root.rotation.set(0, p.heading + Math.PI / 2 + 0.35, 0);
+    this.rider.root.rotation.set(0, ry, 0);
     this.rider.root.scale.setScalar(1);
     this.rider.setPose('stand');
     this.riderStanding = true;
+
+    if (!this.riderLightsAdded) {
+      this.scene.add(this.riderKey, this.riderKey.target, this.riderFill, this.riderFill.target);
+      this.riderLightsAdded = true;
+    }
+    const facing = new Vector3(Math.sin(ry), 0, Math.cos(ry));
+    const side = new Vector3(facing.z, 0, -facing.x);
+    const chest = pos.clone().add(new Vector3(0, 1.2, 0));
+    this.riderKey.position
+      .copy(chest)
+      .addScaledVector(facing, 3)
+      .addScaledVector(side, -1.6)
+      .add(new Vector3(0, 2.2, 0));
+    this.riderKey.target.position.copy(chest);
+    this.riderFill.position
+      .copy(chest)
+      .addScaledVector(facing, 2.5)
+      .addScaledVector(side, 2.2)
+      .add(new Vector3(0, 0.8, 0));
+    this.riderFill.target.position.copy(chest);
+    const night = this.world.atmosphere.isNight;
+    this.riderKey.intensity = night ? 4.5 : 3.2;
+    this.riderFill.intensity = night ? 1.6 : 1.1;
   }
 
   private seatRider(): void {
     this.rider.setShowHelmet(true);
+    this.riderKey.intensity = 0;
+    this.riderFill.intensity = 0;
     this.bike.lean.add(this.rider.root);
     // The GLB faces +Z (Blender -Y front), the bike faces -Z: half turn. Rig hips are at y 0.91
     // in the rest pose and the saddle top is ~0.80, so drop the root to seat the pelvis.

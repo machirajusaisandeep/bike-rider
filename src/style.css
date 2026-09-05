@@ -1521,7 +1521,7 @@ body {
 
 .char-side {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: flex-end;
   align-self: stretch;
 }
@@ -1584,8 +1584,8 @@ body {
   background: linear-gradient(
     90deg,
     rgba(6, 8, 11, 0.86) 0%,
-    rgba(6, 8, 11, 0.7) 40%,
-    rgba(6, 8, 11, 0.25) 62%,
-    rgba(6, 8, 11, 0.15) 100%
+    rgba(6, 8, 11, 0.7) 38%,
+    rgba(6, 8, 11, 0.12) 58%,
+    rgba(6, 8, 11, 0) 100%
   );
 }
