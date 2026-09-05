@@ -19,6 +19,7 @@ import {
   type Zone,
 } from '../game/gear';
 import { SCENES, type SceneDef, type SceneId } from '../world/scenes';
+import type { GameMode } from '../game/Run';
 
 export type MenuStep = 'rider' | 'scene';
 export type RiderTab = 'face' | 'hair' | 'gear';
@@ -32,6 +33,9 @@ export interface MenuCallbacks {
   onStepChange: (step: MenuStep) => void;
   /** Character tab changed: the camera frames the head for face/hair, full body for gear. */
   onFocus: (tab: RiderTab) => void;
+  onModeChange: (mode: GameMode) => void;
+  onOpenMissions: () => void;
+  onOpenGarage: () => void;
 }
 
 const ICON: Record<SceneDef['category'], string> = {
@@ -78,6 +82,13 @@ export class Menu {
   private descEl: HTMLElement;
   private placeEl: HTMLElement;
   private stepDots: HTMLElement[] = [];
+  private mode: GameMode = 'ride';
+  private dailyScene: SceneId | null = null;
+  private dailyStreak = 0;
+  private bests: Partial<Record<SceneId, number>> = {};
+  private modeSeg!: HTMLElement;
+  private modeNote!: HTMLElement;
+  private coinsEl!: HTMLElement;
 
   private onKey = (e: KeyboardEvent) => {
     if (this.root.hidden) return;
@@ -121,6 +132,19 @@ export class Menu {
         </header>
         <section class="panel-rider"></section>
         <section class="panel-scene" hidden>
+          <div class="mode-row">
+            <div class="seg mode-seg">
+              <button type="button" class="seg-btn active" data-mode="ride">Ride</button>
+              <button type="button" class="seg-btn" data-mode="daily">Daily challenge</button>
+              <button type="button" class="seg-btn" data-mode="free">Free ride</button>
+            </div>
+            <div class="mode-note"></div>
+            <div class="mode-right">
+              <button type="button" class="link-btn btn-missions">Missions</button>
+              <button type="button" class="link-btn btn-garage">Garage</button>
+              <span class="coins" title="Coins">🪙 <b class="coins-num">0</b></span>
+            </div>
+          </div>
           <div class="menu-grid" role="listbox" aria-label="Choose a scene"></div>
           <footer class="menu-foot">
             <div class="menu-selected">
@@ -294,6 +318,7 @@ export class Menu {
           <span class="scene-cat">${ICON[s.category]}${s.category}</span>
           <span class="scene-name">${s.name}</span>
           <span class="scene-tag">${s.tagline}</span>
+          <span class="scene-best" hidden></span>
         </div>`;
       b.addEventListener('click', () => this.select(s.id, true));
       b.addEventListener('dblclick', () => this.cb.onStart(s.id));
@@ -302,6 +327,18 @@ export class Menu {
     }
     this.startBtn = this.scenePanel.querySelector<HTMLButtonElement>('.btn-start')!;
     this.startBtn.addEventListener('click', () => this.cb.onStart(this.selected));
+    this.modeSeg = this.scenePanel.querySelector<HTMLElement>('.mode-seg')!;
+    this.modeNote = this.scenePanel.querySelector<HTMLElement>('.mode-note')!;
+    this.coinsEl = this.scenePanel.querySelector<HTMLElement>('.coins-num')!;
+    this.modeSeg.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
+      b.addEventListener('click', () => this.setMode(b.dataset.mode as GameMode, true)),
+    );
+    this.scenePanel
+      .querySelector<HTMLButtonElement>('.btn-missions')!
+      .addEventListener('click', () => this.cb.onOpenMissions());
+    this.scenePanel
+      .querySelector<HTMLButtonElement>('.btn-garage')!
+      .addEventListener('click', () => this.cb.onOpenGarage());
     this.scenePanel
       .querySelector<HTMLButtonElement>('.btn-back')!
       .addEventListener('click', () => this.setStep('rider'));
@@ -453,6 +490,7 @@ export class Menu {
   }
 
   private move(dir: number): void {
+    if (this.mode === 'daily') return;
     const i = SCENES.findIndex((s) => s.id === this.selected);
     const next = SCENES[(i + dir + SCENES.length) % SCENES.length]!;
     this.select(next.id, true);
@@ -469,8 +507,61 @@ export class Menu {
     this.sceneNameEl.textContent = def.name;
     this.placeEl.textContent = def.place;
     this.descEl.textContent = def.description;
-    this.startBtn.innerHTML = `Ride ${def.name} <span class="key">↵</span>`;
+    this.startBtn.innerHTML =
+      this.mode === 'daily'
+        ? `Ride today's daily <span class="key">↵</span>`
+        : this.mode === 'free'
+          ? `Cruise ${def.name} <span class="key">↵</span>`
+          : `Ride ${def.name} <span class="key">↵</span>`;
     if (preview) this.cb.onPreview(id);
+  }
+
+  // ------------------------------------------------------------------ modes / progress ----
+  setMode(mode: GameMode, notify = false): void {
+    this.mode = mode === 'mission' ? 'ride' : mode;
+    this.modeSeg
+      .querySelectorAll<HTMLElement>('[data-mode]')
+      .forEach((b) => b.classList.toggle('active', b.dataset.mode === this.mode));
+    const daily = this.mode === 'daily' && this.dailyScene;
+    for (const [id, card] of this.cards) {
+      card.classList.toggle('locked', !!daily && id !== this.dailyScene);
+    }
+    if (daily) this.select(this.dailyScene!, true);
+    else this.select(this.selected, false);
+    this.modeNote.textContent =
+      this.mode === 'daily'
+        ? `Same road and traffic for everyone today${this.dailyStreak > 1 ? ` · ${this.dailyStreak}-day streak` : ''}`
+        : this.mode === 'free'
+          ? 'No traffic, no score. Just the road.'
+          : 'Traffic, hazards, near-miss combos. Crash and the run ends.';
+    if (notify) this.cb.onModeChange(this.mode);
+  }
+
+  get currentMode(): GameMode {
+    return this.mode;
+  }
+
+  setDaily(scene: SceneId, streak: number): void {
+    this.dailyScene = scene;
+    this.dailyStreak = streak;
+    for (const [id, card] of this.cards) {
+      card.classList.toggle('is-daily', id === scene);
+    }
+    if (this.mode === 'daily') this.setMode('daily');
+  }
+
+  setBests(bests: Partial<Record<SceneId, number>>): void {
+    this.bests = bests;
+    for (const [id, card] of this.cards) {
+      const el = card.querySelector<HTMLElement>('.scene-best')!;
+      const b = this.bests[id];
+      el.hidden = !b;
+      if (b) el.textContent = `Best ${Math.round(b).toLocaleString('en-IN')}`;
+    }
+  }
+
+  setCoins(n: number): void {
+    this.coinsEl.textContent = n.toLocaleString('en-IN');
   }
 
   get current(): SceneId {

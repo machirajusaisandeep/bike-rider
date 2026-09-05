@@ -2,9 +2,9 @@ import { Vector3 } from 'three';
 import { BIKE, GEAR_THRESHOLDS_KMH } from '../core/config';
 import type { InputState } from '../core/Input';
 
-export type Surface = 'asphalt' | 'gravel' | 'off';
+export type Surface = 'asphalt' | 'gravel' | 'off' | 'wet';
 
-const SURFACE_GRIP: Record<Surface, number> = { asphalt: 1, gravel: 0.72, off: 0.5 };
+const SURFACE_GRIP: Record<Surface, number> = { asphalt: 1, gravel: 0.72, off: 0.5, wet: 0.7 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const smoothstep = (t: number) => {
@@ -32,6 +32,10 @@ export class BikePhysics {
   pitch = 0;
   /** Terrain height sampler; set by the world. */
   heightAt: (x: number, z: number) => number = () => 0;
+  /** Lowside slide after a fatal crash: no control, heavy friction, bike on its side. */
+  crashed = false;
+  /** Multipliers from bike upgrades (1 = stock). */
+  tune = { power: 1, brakes: 1, grip: 1, offroad: 1 };
 
   readonly forward = new Vector3(0, 0, -1);
 
@@ -43,9 +47,32 @@ export class BikePhysics {
     this.steerAngle = 0;
     this.lean = 0;
     this.yawRate = 0;
+    this.crashed = false;
     this.updateForward();
     this.position.y = this.heightAt(x, z);
   }
+
+  /**
+   * Non-fatal impact: lose speed, get kicked away from the obstacle (`side` = +1 obstacle on the
+   * right) and wobble. `severity` 0..1 scales everything.
+   */
+  impulse(side: 1 | -1, severity: number): void {
+    const s = clamp(severity, 0, 1);
+    this.speed *= 1 - 0.55 * s;
+    // yaw away from the obstacle; heading increases turn left (heading 0 faces -Z)
+    this.heading += side * (0.08 + 0.22 * s);
+    this.yawRate = side * 1.5 * s;
+    this.lean = -side * 0.35 * s;
+    this.updateForward();
+  }
+
+  /** Fatal crash: start the lowside slide in the current direction of travel. */
+  crash(side: 1 | -1 = 1): void {
+    this.crashed = true;
+    this.steerAngle = 0;
+    this.leanTarget = side * 1.35;
+  }
+  private leanTarget = 0;
 
   get speedKmh(): number {
     return Math.abs(this.speed) * 3.6;
@@ -78,7 +105,11 @@ export class BikePhysics {
   }
 
   update(dt: number, input: InputState): void {
-    const grip = SURFACE_GRIP[this.surface];
+    if (this.crashed) {
+      this.updateCrash(dt);
+      return;
+    }
+    const grip = SURFACE_GRIP[this.surface] * (this.surface === 'asphalt' ? 1 : this.tune.offroad) * this.tune.grip;
     const v = this.speed;
     const absV = Math.abs(v);
     const ratio = this.speedRatio;
@@ -87,11 +118,11 @@ export class BikePhysics {
     let a = 0;
     if (input.throttle > 0 && v > -0.2) {
       // Power tails off approaching top speed.
-      a += input.throttle * BIKE.accel * (1 - 0.55 * ratio * ratio) * (0.6 + 0.4 * grip);
+      a += input.throttle * BIKE.accel * this.tune.power * (1 - 0.55 * ratio * ratio) * (0.6 + 0.4 * grip);
     }
     const reversing = input.brake > 0 && v <= 0.25 && input.throttle === 0;
     if (input.brake > 0) {
-      if (v > 0.25) a -= BIKE.brakeDecel * input.brake * (0.55 + 0.45 * grip);
+      if (v > 0.25) a -= BIKE.brakeDecel * this.tune.brakes * input.brake * (0.55 + 0.45 * grip);
       else if (reversing) a -= BIKE.reverseAccel; // creep backwards
     }
     if (input.handbrake && absV > 0.05) {
@@ -161,6 +192,22 @@ export class BikePhysics {
     this.position.y = (hf + hr) / 2;
     const targetPitch = Math.atan2(hf - hr, BIKE.wheelbase);
     this.pitch += (targetPitch - this.pitch) * Math.min(1, 10 * dt);
+  }
+
+  private updateCrash(dt: number): void {
+    // Sliding metal on tarmac: ~0.6 g, more on gravel.
+    const mu = this.surface === 'asphalt' ? 6 : 9;
+    const absV = Math.abs(this.speed);
+    const nv = Math.max(0, absV - mu * dt) * Math.sign(this.speed || 1);
+    this.speed = Math.abs(nv) < 0.05 ? 0 : nv;
+    this.lean += (this.leanTarget - this.lean) * Math.min(1, 9 * dt);
+    this.yawRate *= Math.max(0, 1 - 3 * dt);
+    this.heading += this.yawRate * dt;
+    this.updateForward();
+    const dist = this.speed * dt;
+    this.frameDistance = dist;
+    this.position.addScaledVector(this.forward, dist);
+    this.position.y = this.heightAt(this.position.x, this.position.z);
   }
 
   private updateForward(): void {

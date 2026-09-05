@@ -27,6 +27,7 @@ export interface HudCallbacks {
   onCycleCamera: () => void;
   onSettingsChange: (s: Settings) => void;
   onOpenScenes: () => void;
+  onQuitRun: () => void;
 }
 
 const ICONS = {
@@ -85,6 +86,17 @@ export class Hud {
   private settings: Settings;
   private hintDismissed = false;
   private lastSpeedText = '';
+  private scoreEl: HTMLElement;
+  private comboEl: HTMLElement;
+  private comboFill: HTMLElement;
+  private healthFill: HTMLElement;
+  private healthWrap: HTMLElement;
+  private modeChip: HTMLElement;
+  private countdownEl: HTMLElement;
+  private bonusWrap: HTMLElement;
+  private runCluster: HTMLElement;
+  private lastScoreText = '';
+  private perf = false;
 
   constructor(
     parent: HTMLElement,
@@ -135,6 +147,32 @@ export class Hud {
     scenesBtn.classList.add('btn-wide');
     tr.append(scenesBtn, this.cameraBtn, this.pauseBtn, resetBtn, this.soundBtn, settingsBtn);
     this.root.appendChild(tr);
+
+    // --- top-centre: run cluster (score, combo, health) ------------------------------
+    const tc = el('div', 'hud-corner hud-tc');
+    this.runCluster = el('div', 'run-cluster');
+    this.modeChip = el('div', 'run-mode', 'Ride');
+    this.scoreEl = el('div', 'run-score', '0');
+    const comboWrap = el('div', 'run-combo');
+    this.comboEl = el('span', 'run-combo-text', '');
+    const comboBar = el('div', 'run-combo-bar');
+    this.comboFill = el('div', 'run-combo-fill');
+    comboBar.appendChild(this.comboFill);
+    comboWrap.append(this.comboEl, comboBar);
+    this.healthWrap = el('div', 'run-health');
+    this.healthWrap.title = 'Rider health';
+    this.healthFill = el('div', 'run-health-fill');
+    this.healthWrap.appendChild(this.healthFill);
+    this.runCluster.append(this.modeChip, this.scoreEl, comboWrap, this.healthWrap);
+    this.runCluster.hidden = true;
+    tc.appendChild(this.runCluster);
+    this.root.appendChild(tc);
+
+    this.countdownEl = el('div', 'countdown');
+    this.countdownEl.hidden = true;
+    this.root.appendChild(this.countdownEl);
+    this.bonusWrap = el('div', 'bonus-wrap');
+    this.root.appendChild(this.bonusWrap);
 
     // --- bottom-left: speed cluster --------------------------------------------------
     const bl = el('div', 'hud-corner hud-bl');
@@ -197,6 +235,7 @@ export class Hud {
         <p>Take a breather. Your bike is right where you left it.</p>
         <button class="btn-primary" data-action="resume">Resume</button>
         <button class="btn-ghost" data-action="reset">Reset bike</button>
+        <button class="btn-ghost" data-action="quit">End run · change road</button>
       </div>`;
     this.pauseOverlay.addEventListener('click', (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
@@ -206,6 +245,7 @@ export class Hud {
         this.cb.onReset();
         this.cb.onTogglePause();
       }
+      if (t.dataset.action === 'quit') this.cb.onQuitRun();
     });
     this.root.appendChild(this.pauseOverlay);
 
@@ -360,6 +400,76 @@ export class Hud {
       : `Protection ${score}/100 · fully covered`;
   }
 
+  // ------------------------------------------------------------------ run UI --------------
+  /** Show / hide the score cluster. `label` is the mode name shown above the score. */
+  setRun(scored: boolean, label = 'Ride'): void {
+    this.runCluster.hidden = !scored;
+    this.modeChip.textContent = label;
+    this.root.classList.toggle('scored', scored);
+    if (scored) {
+      this.updateScore(0, 0, 0, 1);
+      this.setHealth(1);
+    }
+  }
+
+  updateScore(score: number, combo: number, comboFraction: number, mult: number): void {
+    const txt = Math.round(score).toLocaleString('en-IN');
+    if (txt !== this.lastScoreText) {
+      this.scoreEl.textContent = txt;
+      this.lastScoreText = txt;
+    }
+    const on = combo > 0;
+    this.comboEl.textContent = on ? `×${mult} combo` : '';
+    this.comboEl.parentElement!.classList.toggle('on', on);
+    this.comboFill.style.transform = `scaleX(${comboFraction.toFixed(3)})`;
+  }
+
+  setHealth(hp: number): void {
+    this.healthFill.style.transform = `scaleX(${Math.max(0, Math.min(1, hp)).toFixed(3)})`;
+    this.healthWrap.dataset.level = hp > 0.6 ? 'high' : hp > 0.3 ? 'mid' : 'low';
+  }
+
+  /** Big centre text for the countdown / GO. Pass null to hide. */
+  setCountdown(text: string | null): void {
+    this.countdownEl.hidden = !text;
+    if (text && this.countdownEl.textContent !== text) {
+      this.countdownEl.textContent = text;
+      this.countdownEl.classList.remove('pop');
+      void this.countdownEl.offsetWidth;
+      this.countdownEl.classList.add('pop');
+    }
+  }
+
+  /** Floating bonus text ("Near miss ×3  +420"). */
+  popBonus(label: string, points: number, kind: string): void {
+    const pts = points === 0 ? '' : `<b>${points > 0 ? '+' : ''}${points}</b>`;
+    const b = el('div', `bonus bonus-${kind}`, `<span>${label}</span>${pts}`);
+    this.bonusWrap.appendChild(b);
+    while (this.bonusWrap.children.length > 4) this.bonusWrap.firstElementChild?.remove();
+    setTimeout(() => b.remove(), 1400);
+  }
+
+  /** Replace the start hint (null restores the default and re-arms it). */
+  setHint(html: string | null): void {
+    this.startHint.innerHTML =
+      html ??
+      '<span>Hold</span><span class="key">W</span><span>or</span><span class="key">↑</span><span>to ride</span>';
+    this.startHint.classList.remove('gone');
+    this.hintDismissed = false;
+  }
+
+  /** Red vignette flash on impact. */
+  flashHit(): void {
+    this.root.classList.remove('hit-flash');
+    void this.root.offsetWidth;
+    this.root.classList.add('hit-flash');
+  }
+
+  setPerf(on: boolean): void {
+    this.perf = on;
+    this.fpsEl.hidden = !on;
+  }
+
   /** Transient status line (model loading etc.). Pass null to hide. */
   setStatus(text: string | null): void {
     this.statusEl.hidden = !text;
@@ -405,15 +515,23 @@ export class Hud {
     this.rpmFill.style.transform = `scaleX(${d.rpm.toFixed(3)})`;
     this.rpmFill.classList.toggle('hot', d.rpm > 0.85);
     const surf =
-      d.surface === 'asphalt' ? 'Asphalt' : d.surface === 'gravel' ? 'Gravel' : 'Off-road';
+      d.surface === 'asphalt'
+        ? 'Asphalt'
+        : d.surface === 'gravel'
+          ? 'Gravel'
+          : d.surface === 'wet'
+            ? 'Wet'
+            : 'Off-road';
     if (this.surfaceEl.textContent !== surf) {
       this.surfaceEl.textContent = surf;
       this.surfaceEl.dataset.surface = d.surface;
     }
     const dist = `${d.distanceKm.toFixed(1)} km`;
     if (this.distEl.textContent !== dist) this.distEl.textContent = dist;
-    const fps = `${Math.round(d.fps)} fps`;
-    if (this.fpsEl.textContent !== fps) this.fpsEl.textContent = fps;
+    if (this.perf) {
+      const fps = `${Math.round(d.fps)} fps`;
+      if (this.fpsEl.textContent !== fps) this.fpsEl.textContent = fps;
+    }
     this.offRouteEl.hidden = !d.offRoute;
     if (!this.hintDismissed && d.moving) {
       this.hintDismissed = true;

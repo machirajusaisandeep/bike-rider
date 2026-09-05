@@ -52,7 +52,39 @@ export const GEAR_THRESHOLDS_KMH = [0, 18, 38, 60, 85] as const;
  * Enfield's Scram 411 GLB here for local use (it is gitignored, see README). If the file is
  * missing the game silently keeps the built-in procedural bike.
  */
-export const EXTERNAL_BIKE_MODEL: string | null = 'models/scram411.glb';
+export const EXTERNAL_BIKE_MODEL: string | null = import.meta.env.VITE_PUBLIC_BUILD
+  ? null
+  : 'models/scram411.glb';
 export const DRACO_DECODER_PATH = 'draco/';
 /** Recolour the model's Graphite Red tank texture to the White Flame scheme. */
 export const WHITE_FLAME_RECOLOUR = true;
+
+/** Traffic, hazards and scoring tuning. */
+export const TRAFFIC = {
+  /** Lane centre offset from the road centreline as a fraction of half the road width. */
+  laneFraction: 0.5,
+  /** Vehicles spawn this far ahead of the rider (m) and are recycled this far behind. */
+  spawnAhead: 260,
+  despawnBehind: 40,
+  /** Base vehicles alive per direction at density 1. */
+  perDirection: 5,
+  /** A near miss is passing inside this lateral gap (m) at or above this speed (km/h). */
+  nearMissGap: 1.25,
+  nearMissMinKmh: 55,
+  /** Bike collision capsule in road space. */
+  bikeRadius: 0.42,
+  bikeLength: 2.1,
+} as const;
+
+export const HEALTH = {
+  /** Impacts below this relative speed (km/h) are harmless wobbles. */
+  harmlessKmh: 14,
+  /** Relative speed (km/h) at which an unprotected rider takes full damage. */
+  fatalKmh: 95,
+  /** Fraction of damage that full (100/100) gear removes. */
+  gearMitigation: 0.75,
+  /** Damage above this ends the run outright regardless of remaining health. */
+  fatalDamage: 0.92,
+  /** Seconds of invulnerability after a hit so one crash does not double count. */
+  graceS: 1.2,
+} as const;

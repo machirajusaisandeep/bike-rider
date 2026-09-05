@@ -33,6 +33,7 @@ export class ChaseCamera {
   private lookAt = new Vector3();
   private orbit = 0;
   private shake = 0;
+  private kickAmt = 0;
   private snap = true;
   /** Tight orbit around the rider for the gear screen. */
   private closeUp = false;
@@ -68,6 +69,11 @@ export class ChaseCamera {
   /** Force the camera to jump to its ideal spot next frame (after reset). */
   resetSmoothing(): void {
     this.snap = true;
+  }
+
+  /** Impact shake, 0..1. Decays on its own. */
+  kick(amount: number): void {
+    this.kickAmt = Math.min(1.5, this.kickAmt + amount);
   }
 
   update(dt: number, bike: BikePhysics, roughness: number, elapsed: number): void {
@@ -154,7 +160,10 @@ export class ChaseCamera {
 
     // Rough surface / engine vibration shake
     this.shake = MathUtils.lerp(this.shake, roughness, Math.min(1, 6 * dt));
-    const s = this.shake * (this.mode === 'cockpit' ? 0.05 : 0.03);
+    this.kickAmt = Math.max(0, this.kickAmt - dt * 2.2);
+    const s =
+      this.shake * (this.mode === 'cockpit' ? 0.05 : 0.03) +
+      this.kickAmt * this.kickAmt * (this.mode === 'cockpit' ? 0.25 : 0.18);
     const t = elapsed * 37;
     cam.position.set(
       this.pos.x + Math.sin(t * 1.3) * s,
