@@ -28,17 +28,23 @@ export class BikePhysics {
   surface: Surface = 'asphalt';
   /** distance travelled this frame, for wheel spin */
   frameDistance = 0;
+  /** nose-up pitch (rad) from the terrain under the wheels */
+  pitch = 0;
+  /** Terrain height sampler; set by the world. */
+  heightAt: (x: number, z: number) => number = () => 0;
 
   readonly forward = new Vector3(0, 0, -1);
 
   reset(x: number, z: number, heading = 0): void {
     this.position.set(x, 0, z);
     this.heading = heading;
+    this.pitch = 0;
     this.speed = 0;
     this.steerAngle = 0;
     this.lean = 0;
     this.yawRate = 0;
     this.updateForward();
+    this.position.y = this.heightAt(x, z);
   }
 
   get speedKmh(): number {
@@ -91,6 +97,8 @@ export class BikePhysics {
     if (input.handbrake && absV > 0.05) {
       a -= Math.sign(v) * BIKE.brakeDecel * 1.15 * (0.5 + 0.5 * grip);
     }
+    // Gravity along the slope: climbs cost speed, descents give it back (softened for arcade feel).
+    a -= BIKE.gravity * Math.sin(this.pitch) * 0.55;
     // Drag: rolling + aero + engine braking when coasting. Off-road adds heavy rolling loss.
     const rolling =
       BIKE.rollingDrag * (this.surface === 'asphalt' ? 1 : this.surface === 'gravel' ? 2.2 : 5);
@@ -142,6 +150,17 @@ export class BikePhysics {
     const dist = this.speed * dt;
     this.frameDistance = dist;
     this.position.addScaledVector(this.forward, dist);
+    // Elevation + pitch from the terrain sampled at the wheel contact points.
+    const half = BIKE.wheelbase / 2;
+    const fx = this.position.x + this.forward.x * half;
+    const fz = this.position.z + this.forward.z * half;
+    const rx = this.position.x - this.forward.x * half;
+    const rz = this.position.z - this.forward.z * half;
+    const hf = this.heightAt(fx, fz);
+    const hr = this.heightAt(rx, rz);
+    this.position.y = (hf + hr) / 2;
+    const targetPitch = Math.atan2(hf - hr, BIKE.wheelbase);
+    this.pitch += (targetPitch - this.pitch) * Math.min(1, 10 * dt);
   }
 
   private updateForward(): void {

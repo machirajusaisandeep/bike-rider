@@ -23,6 +23,8 @@ export class ChaseCamera {
   private orbit = 0;
   private shake = 0;
   private snap = true;
+  /** Terrain sampler so the camera never dips below the ground. */
+  heightAt: (x: number, z: number) => number = () => 0;
 
   constructor(readonly camera: PerspectiveCamera) {}
 
@@ -52,19 +54,19 @@ export class ChaseCamera {
       case 'chase': {
         const dist = CAMERA.chaseDistance + ratio * 1.6;
         _desired.copy(bike.position).addScaledVector(fwd, -dist);
-        _desired.y = CAMERA.chaseHeight + ratio * 0.35;
+        _desired.y = bike.position.y + CAMERA.chaseHeight + ratio * 0.35;
         // Slide the camera to the outside of the turn so the lean reads nicely.
         _desired.addScaledVector(_right, bike.lean * 0.9);
         _target.copy(bike.position).addScaledVector(fwd, CAMERA.chaseLookAhead + ratio * 4);
-        _target.y = 0.85;
+        _target.y = bike.position.y + 0.85;
         break;
       }
       case 'cockpit': {
         _desired.copy(bike.position).addScaledVector(fwd, -0.25);
-        _desired.y = 1.38;
+        _desired.y = bike.position.y + 1.38;
         _desired.addScaledVector(_right, bike.lean * 0.25);
         _target.copy(bike.position).addScaledVector(fwd, 12);
-        _target.y = 0.9 + ratio * 0.5;
+        _target.y = bike.position.y + 0.9 + ratio * 0.5 - Math.sin(bike.pitch) * 6;
         break;
       }
       case 'cinematic': {
@@ -72,14 +74,18 @@ export class ChaseCamera {
         const r = 6.5 + Math.sin(elapsed * 0.31) * 1.2;
         _desired.set(
           bike.position.x + Math.cos(this.orbit) * r,
-          1.2 + (Math.sin(elapsed * 0.47) * 0.5 + 0.5) * 1.6,
+          bike.position.y + 1.2 + (Math.sin(elapsed * 0.47) * 0.5 + 0.5) * 1.6,
           bike.position.z + Math.sin(this.orbit) * r,
         );
         _target.copy(bike.position).addScaledVector(fwd, 1.2);
-        _target.y = 0.7;
+        _target.y = bike.position.y + 0.7;
         break;
       }
     }
+
+    // Never let the camera sink into the terrain.
+    const groundY = this.heightAt(_desired.x, _desired.z) + (this.mode === 'cockpit' ? 0.4 : 1.1);
+    if (_desired.y < groundY) _desired.y = groundY;
 
     if (this.snap) {
       this.pos.copy(_desired);

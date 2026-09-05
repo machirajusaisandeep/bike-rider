@@ -115,3 +115,151 @@ export function signTexture(label: string): CanvasTexture {
   tex.colorSpace = SRGBColorSpace;
   return tex;
 }
+
+/** Grass / shrub billboard: alpha-cut blades on a transparent canvas. */
+export function grassBillboardTexture(shrub = false): CanvasTexture {
+  const w = 256;
+  const h = 256;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, w, h);
+  const blades = shrub ? 90 : 46;
+  for (let i = 0; i < blades; i++) {
+    const x0 = w * (0.15 + Math.random() * 0.7);
+    const height = h * (shrub ? 0.35 + Math.random() * 0.5 : 0.45 + Math.random() * 0.5);
+    const lean = (Math.random() - 0.5) * (shrub ? 120 : 60);
+    const g = 90 + Math.random() * 70;
+    ctx.strokeStyle = `rgb(${40 + Math.random() * 30},${g},${30 + Math.random() * 25})`;
+    ctx.lineWidth = shrub ? 6 + Math.random() * 8 : 3 + Math.random() * 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x0, h);
+    ctx.quadraticCurveTo(x0 + lean * 0.3, h - height * 0.6, x0 + lean, h - height);
+    ctx.stroke();
+    if (shrub) {
+      ctx.fillStyle = `rgba(${50 + Math.random() * 30},${g + 10},${35},0.9)`;
+      ctx.beginPath();
+      ctx.ellipse(
+        x0 + lean,
+        h - height,
+        10 + Math.random() * 12,
+        7 + Math.random() * 8,
+        0,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+    }
+  }
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/** Building facade: rows of windows; emissive variant lights a random subset. */
+export function facadeTexture(emissive: boolean): CanvasTexture {
+  const w = 512;
+  const h = 1024;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = emissive ? '#000' : '#8e9298';
+  ctx.fillRect(0, 0, w, h);
+  const cols = 6;
+  const rows = 16;
+  const cw = w / cols;
+  const rh = h / rows;
+  for (let r = 0; r < rows; r++) {
+    for (let col = 0; col < cols; col++) {
+      const lit = Math.random() < 0.45;
+      if (emissive) {
+        if (!lit) continue;
+        const warm = Math.random() < 0.7;
+        ctx.fillStyle = warm
+          ? `rgb(${230 + Math.random() * 25},${180 + Math.random() * 40},${110 + Math.random() * 40})`
+          : `rgb(${150},${200},${255})`;
+      } else {
+        const t = 60 + Math.random() * 40;
+        ctx.fillStyle = `rgb(${t},${t + 15},${t + 30})`;
+      }
+      ctx.fillRect(col * cw + cw * 0.18, r * rh + rh * 0.22, cw * 0.64, rh * 0.5);
+    }
+  }
+  if (!emissive) {
+    // concrete banding between floors
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    for (let r = 0; r < rows; r++) ctx.fillRect(0, r * rh, w, 3);
+  }
+  const tex = new CanvasTexture(c);
+  tex.wrapS = tex.wrapT = RepeatWrapping;
+  tex.colorSpace = SRGBColorSpace;
+  return tex;
+}
+
+/** Wide 3-lane-per-side city road: lane dashes, edge lines. */
+export function cityAsphaltTexture(): CanvasTexture {
+  const w = 1024;
+  const h = 1024;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  noiseFill(ctx, w, h, [46, 47, 50], 26, 40000);
+  ctx.fillStyle = 'rgba(232,232,226,0.85)';
+  ctx.fillRect(w * 0.02, 0, w * 0.008, h);
+  ctx.fillRect(w * 0.972, 0, w * 0.008, h);
+  // median double yellow
+  ctx.fillStyle = 'rgba(240,200,60,0.9)';
+  ctx.fillRect(w * 0.492, 0, w * 0.006, h);
+  ctx.fillRect(w * 0.502, 0, w * 0.006, h);
+  // lane dashes at 1/6 and 2/6 each side
+  ctx.fillStyle = 'rgba(240,236,220,0.85)';
+  for (const u of [0.18, 0.34, 0.66, 0.82]) ctx.fillRect(w * u, h * 0.1, w * 0.006, h * 0.375);
+  return finish(c);
+}
+
+/** Dusty mountain highway: lighter, faded lines, cracks. */
+export function dustyAsphaltTexture(): CanvasTexture {
+  const w = 512;
+  const h = 1024;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  noiseFill(ctx, w, h, [92, 88, 82], 40, 30000);
+  ctx.strokeStyle = 'rgba(40,36,32,0.35)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 12; i++) {
+    ctx.beginPath();
+    let x = Math.random() * w;
+    let y = Math.random() * h;
+    ctx.moveTo(x, y);
+    for (let k = 0; k < 6; k++) {
+      x += (Math.random() - 0.5) * 80;
+      y += Math.random() * 60;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(232,232,226,0.45)';
+  ctx.fillRect(w * 0.035, 0, w * 0.018, h);
+  ctx.fillRect(w * 0.947, 0, w * 0.018, h);
+  ctx.fillStyle = 'rgba(240,236,220,0.5)';
+  ctx.fillRect(w * 0.49, h * 0.1, w * 0.02, h * 0.375);
+  return finish(c);
+}
+
+/** Coarse sand / laterite for beach shoulders. */
+export function sandTexture(): CanvasTexture {
+  const s = 512;
+  const c = document.createElement('canvas');
+  c.width = s;
+  c.height = s;
+  const ctx = c.getContext('2d')!;
+  noiseFill(ctx, s, s, [196, 168, 128], 50, 30000);
+  return finish(c);
+}

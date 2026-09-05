@@ -1,9 +1,12 @@
+import { DEFAULT_SCENE, isSceneId, type SceneId } from '../world/scenes';
+
 export type Quality = 'low' | 'medium' | 'high';
-export type TimeOfDay = 'day' | 'dusk';
+export type TimeOfDay = 'auto' | 'day' | 'golden' | 'night';
 export type Units = 'kmh' | 'mph';
 export type CameraMode = 'chase' | 'cockpit' | 'cinematic';
 
 export interface Settings {
+  scene: SceneId;
   quality: Quality;
   timeOfDay: TimeOfDay;
   units: Units;
@@ -12,11 +15,12 @@ export interface Settings {
   cameraMode: CameraMode;
 }
 
-const KEY = 'bike-rider.settings.v1';
+const KEY = 'bike-rider.settings.v2';
 
 export const DEFAULT_SETTINGS: Settings = {
+  scene: DEFAULT_SCENE,
   quality: 'high',
-  timeOfDay: 'day',
+  timeOfDay: 'auto',
   units: 'kmh',
   touchControls: 'auto',
   sound: false,
@@ -27,7 +31,10 @@ export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+    const s = { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+    if (!isSceneId(s.scene)) s.scene = DEFAULT_SCENE;
+    if (!['auto', 'day', 'golden', 'night'].includes(s.timeOfDay)) s.timeOfDay = 'auto';
+    return s;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

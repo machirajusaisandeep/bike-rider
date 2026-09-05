@@ -26,6 +26,7 @@ export interface HudCallbacks {
   onTogglePause: () => void;
   onCycleCamera: () => void;
   onSettingsChange: (s: Settings) => void;
+  onOpenScenes: () => void;
 }
 
 const ICONS = {
@@ -41,6 +42,8 @@ const ICONS = {
   settings:
     '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  scenes:
+    '<svg viewBox="0 0 24 24"><path d="M3 17l5-7 4 5 3-3 6 5z"/><circle cx="17" cy="7" r="2"/></svg>',
 };
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -121,7 +124,12 @@ export class Hud {
       },
     );
     const settingsBtn = this.iconButton(ICONS.settings, 'Settings', () => this.toggleSettings());
-    tr.append(this.cameraBtn, this.pauseBtn, resetBtn, this.soundBtn, settingsBtn);
+    const scenesBtn = this.iconButton(ICONS.scenes, 'Change scene (Esc)', () =>
+      this.cb.onOpenScenes(),
+    );
+    scenesBtn.appendChild(el('span', 'btn-label', 'Scenes'));
+    scenesBtn.classList.add('btn-wide');
+    tr.append(scenesBtn, this.cameraBtn, this.pauseBtn, resetBtn, this.soundBtn, settingsBtn);
     this.root.appendChild(tr);
 
     // --- bottom-left: speed cluster --------------------------------------------------
@@ -154,6 +162,7 @@ export class Hud {
         <div class="ctl"><span class="key">R</span><em>Reset</em></div>
         <div class="ctl"><span class="key">C</span><em>Camera</em></div>
         <div class="ctl"><span class="key">P</span><em>Pause</em></div>
+        <div class="ctl"><span class="key">Esc</span><em>Scenes</em></div>
       </div>`;
     this.root.appendChild(bc);
 
@@ -263,8 +272,10 @@ export class Hud {
     );
     panel.appendChild(
       segmented<TimeOfDay>('Time of day', 'timeOfDay', [
-        { v: 'day', l: 'Day' },
-        { v: 'dusk', l: 'Dusk' },
+        { v: 'auto', l: 'Scene' },
+        { v: 'day', l: 'Noon' },
+        { v: 'golden', l: 'Golden' },
+        { v: 'night', l: 'Night' },
       ]),
     );
     panel.appendChild(
@@ -291,7 +302,7 @@ export class Hud {
       el(
         'div',
         'sheet-foot',
-        'Original Scram 411-inspired model built from primitives. Keyboard: WASD / arrows, Space, R, C, P.',
+        'Keyboard: WASD / arrows, Space brake, R reset, C camera, P pause, Esc scenes.',
       ),
     );
     return panel;
@@ -346,6 +357,11 @@ export class Hud {
   toggleSettings(force?: boolean): void {
     const open = force ?? this.settingsPanel.hidden;
     this.settingsPanel.hidden = !open;
+  }
+
+  setMenuOpen(open: boolean): void {
+    this.root.classList.toggle('menu-open', open);
+    if (open) this.toggleSettings(false);
   }
 
   setPaused(paused: boolean): void {

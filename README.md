@@ -1,14 +1,16 @@
 # Bike Rider
 
-A browser-based Three.js riding game. You ride a Royal Enfield Scram 411 "White Flame"-inspired
-motorcycle down an endless mountain road with WASD or the arrow keys. The 3D scene *is* the
-first screen: no landing page, no menus to click through.
+Ride a Royal Enfield Scram 411 through six Indian landscapes in the browser. Pick a road on the
+scene screen, then ride with WASD or the arrow keys.
 
-![chase view](docs/chase.png)
+|                                                       |                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------- |
+| ![Munnar](docs/munnar.png) Munnar, tea hills          | ![Leh-Ladakh](docs/ladakh.png) Leh–Ladakh, high desert        |
+| ![Wayanad](docs/wayanad.png) Wayanad, rainforest ghat | ![Ooty](docs/ooty.png) Ooty, pine slopes                      |
+| ![Varkala](docs/varkala.png) Varkala, cliff beach     | ![Bengaluru](docs/bengaluru.png) Bengaluru, ring road at dusk |
 
-![cinematic view](docs/cinematic.png)
-
-*Screenshots show the real Scram 411 model loaded locally via `npm run fetch-model` (see asset provenance below).*
+_Screenshots show the real Scram 411 model loaded locally via `npm run fetch-model` (see asset
+provenance below)._
 
 ## Quick start
 
@@ -31,15 +33,16 @@ Browsers without WebGL get a fallback screen with troubleshooting steps instead 
 
 ## Controls
 
-| Action        | Keys                 |
-| ------------- | -------------------- |
-| Throttle      | `W` / `↑`            |
-| Brake, then reverse | `S` / `↓`      |
-| Steer         | `A` `D` / `←` `→`    |
-| Quick brake   | `Space`              |
-| Reset bike to the road | `R`         |
-| Cycle camera (Chase → Cockpit → Cinematic) | `C` |
-| Pause         | `P` or `Esc`         |
+| Action                                     | Keys              |
+| ------------------------------------------ | ----------------- |
+| Throttle                                   | `W` / `↑`         |
+| Brake, then reverse                        | `S` / `↓`         |
+| Steer                                      | `A` `D` / `←` `→` |
+| Quick brake                                | `Space`           |
+| Reset bike to the road                     | `R`               |
+| Cycle camera (Chase → Cockpit → Cinematic) | `C`               |
+| Pause                                      | `P`               |
+| Scene select                               | `Esc`             |
 
 On touch devices, on-screen steer / gas / brake buttons appear automatically. They can be
 forced on or off in Settings.
@@ -67,13 +70,43 @@ Arcade handling, not a physics engine (`src/game/BikePhysics.ts`):
   front wheel turns about the real (raked) fork axis.
 - Fixed 120 Hz simulation step, rendering at display refresh.
 
-## World
+## Scenes and world
 
-An analytic centreline (`src/world/roadPath.ts`) defines the road, so tiles, props, surface
-tests and resets all agree on where the asphalt is. Road tiles are recycled ahead of the rider
-(`src/world/Road.ts`), roadside trees / rocks / marker posts live in `InstancedMesh`es, distant
-hills wrap along the route for parallax, and a gradient sky shader plus fog carry the day / dusk
-presets. Dust particles kick up behind the rear wheel on gravel and under hard braking.
+Six hand-tuned scenes live in `src/world/scenes.ts`. Each one sets the sun, atmosphere, fog,
+road geometry, terrain relief, palette and vegetation layers:
+
+| Scene      | Category  | What you ride through                                                  |
+| ---------- | --------- | ---------------------------------------------------------------------- |
+| Munnar     | Hills     | Contour-planted tea bushes, shola trees, misty ridges                  |
+| Leh–Ladakh | Mountains | Ochre high desert, snow-capped ridges, roadside chortens, dusty tarmac |
+| Wayanad    | Greenery  | Dense rainforest canopy, hairpin ghat, wet-looking asphalt             |
+| Ooty       | Hills     | Pine plantations, eucalyptus, grassy downs, low evening sun            |
+| Varkala    | Beach     | Cliff-top road, coconut palms, cafe shacks, the Arabian Sea            |
+| Bengaluru  | City      | Six-lane ring road, rain trees, lit towers and streetlights at dusk    |
+
+How it is built (all procedural, no downloaded scenery assets):
+
+- **Atmosphere** (`Atmosphere.ts`): three.js Preetham sky with a per-scene sun, an environment
+  map baked from that sky (clamped, so it cannot poison PBR materials), sun + hemisphere
+  lighting, exponential fog tinted from the horizon, and a bounded sun sprite for bloom.
+- **Terrain** (`heights.ts`, `Terrain.ts`): one analytic height function feeds everything. Two
+  levels of recycled heightfield chunks (64² near, 40² far) carry biome vertex colours by
+  height, slope, snow line and shoreline. The road is cut into the terrain as a flat bench, and
+  the bike, camera, props and road ribbon all sample the same function.
+- **Road** (`roadPath.ts`, `Road.ts`): analytic centreline with per-scene curviness and an
+  elevation profile; asphalt / dusty highway / six-lane city textures painted on canvas.
+- **Vegetation** (`Vegetation.ts`): merged low-poly geometries (broadleaf, rain tree, pine,
+  eucalyptus, palm, tea bush, shrub and grass billboards, rocks, boulders, chortens, shacks) as
+  `InstancedMesh`es, seeded deterministically per 40 m tile.
+- **Ocean** (`Ocean.ts`): animated Gerstner-style waves with Fresnel sky reflection and a sun
+  highlight, matched to the scene fog.
+- **City** (`City.ts`): instanced towers with day / emissive night facades, lampposts with pooled
+  point lights, kerbs.
+- **Post-processing** (`postfx/PostFX.ts`): HDR render target, bloom with an exposure-aware
+  threshold, colour grade (saturation, contrast, split-tone, vignette, grain), SMAA. Off on Low.
+
+Time of day (Settings) overrides the scene default: Noon, Golden hour or Night with headlights
+and city lights.
 
 ## The bike and asset provenance
 
@@ -127,9 +160,11 @@ work without renaming nodes.
 
 URL parameters (development only):
 
+- `?scene=munnar|ladakh|wayanad|ooty|varkala|bengaluru` picks a scene; `?nomenu` skips the scene screen.
+- `?quality=low|medium|high` overrides the stored quality.
 - `?autodrive` pins the throttle and follows the road, handy for screenshots and perf checks.
 - In dev builds the game instance is exposed as `window.__bikeRider`.
-- `?camera=chase|cockpit|cinematic`, `?time=day|dusk` override the stored settings for that load.
+- `?camera=chase|cockpit|cinematic`, `?time=auto|day|golden|night` override the stored settings for that load.
 
 ## Project layout
 
@@ -139,8 +174,11 @@ src/
   style.css          HUD, overlays, touch controls, fallback
   core/              config (tuning), settings persistence, input, WebGL probe
   game/              Game loop, Bike model, BikePhysics, ChaseCamera, EngineAudio
-  world/             World, Road tiles, roadPath, Sky shader, Dust, canvas textures
-  ui/Hud.ts          DOM HUD and settings sheet
+  world/             scenes, heights, Terrain, Road, Vegetation, Ocean, City, Atmosphere, Dust
+  postfx/            EffectComposer pipeline
+  ui/                Hud (in-ride overlay), Menu (scene select)
+scripts/fetch-model.mjs   downloads the Scram 411 GLB + Draco decoder (gitignored output)
+public/previews/          scene thumbnails for the menu
 ```
 
 ## Deployment
@@ -151,6 +189,6 @@ can be dropped on GitHub Pages, Netlify, Vercel or any static host with no confi
 ## Roadmap
 
 - Rider figure; ask Royal Enfield about licensing the model for a public deployment.
-- Obstacles / traffic and a route with elevation changes.
+- Traffic, other riders, and checkpoints / a photo mode.
 - Gamepad support and haptics on mobile.
 - Post-processing (bloom for dusk headlights, motion blur at speed) behind the quality setting.

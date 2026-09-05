@@ -28,12 +28,8 @@ export const BIKE = {
 } as const;
 
 export const ROAD = {
-  width: 7.5,
-  shoulder: 2.2,
-  /** Length of a single recyclable road tile (m). */
+  /** Length of a single recyclable road tile (m); reset snaps to tile boundaries. */
   tileLength: 40,
-  /** Number of tiles kept alive around the rider. */
-  tileCount: 18,
   /** How far off the asphalt the ride is still "on route". */
   offRouteDistance: 22,
 } as const;
