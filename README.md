@@ -6,6 +6,10 @@ first screen: no landing page, no menus to click through.
 
 ![chase view](docs/chase.png)
 
+![cinematic view](docs/cinematic.png)
+
+*Screenshots show the real Scram 411 model loaded locally via `npm run fetch-model` (see asset provenance below).*
+
 ## Quick start
 
 ```bash
@@ -73,37 +77,58 @@ presets. Dust particles kick up behind the rear wheel on gravel and under hard b
 
 ## The bike and asset provenance
 
-**No Royal Enfield assets are used.** The plan called for checking whether the 3D preview on
-Royal Enfield's Scram 411 quick-start page could be reused. That asset is Royal Enfield's
-property with no published reuse licence, so it was not copied.
+There are two bikes in this project.
 
-Instead, `src/game/Bike.ts` builds an original Scram 411-inspired model procedurally from
-Three.js primitives: 19"/17" spoked wheels with block tread, long-travel fork with gaiters,
-round headlight with a mini cowl, single-cylinder engine with cooling fins, upswept exhaust,
-flat single-piece seat, mono-shock, and a fuel tank painted at runtime with a canvas texture
-(white base, orange/red flame graphic, black knee stripe, twin racing stripe on top). All of
-this is original work in this repository and is covered by the repository licence.
+### 1. The real Scram 411 model (local only, not in the repo)
+
+Royal Enfield's [Scram 411 digital quick-start](https://www.royalenfield.com/in/en/support/digital-quickstart/scram411/explore/)
+page renders a Draco-compressed GLB of the bike (713 nodes, 105 materials, real textures) in its
+own Three.js viewer. This game can load that exact model:
+
+```bash
+npm run fetch-model   # downloads public/models/scram411.glb (11 MB) + the Draco decoder
+npm run dev           # reload; the HUD shows "Loading Scram 411 model…" for a few seconds
+```
+
+**The model is Royal Enfield's copyrighted asset and has no published reuse licence, so this
+repository does not redistribute it.** `public/models/` and `public/draco/` are gitignored; the
+fetch script only downloads the file to your machine, the same way your browser does when you
+open their page. Do not commit it or deploy it publicly without permission from Royal Enfield.
+
+What the loader does (`loadExternalBike` in `src/game/Bike.ts`):
+
+- Orients the model (its front points to -X) and fits the wheelbase to the physics config.
+- Both wheels share single meshes in the source; they are split by triangle position into
+  front and rear halves so each spins about its own axle.
+- Fork, headlight, bars and mirrors are picked by position relative to the front axle and
+  parented to the steering pivot, so the front end turns with the handlebars.
+- The source livery is Graphite Red. With `WHITE_FLAME_RECOLOUR` on, the tank texture is
+  recoloured at load time (red ↔ white) to approximate the White Flame scheme.
+
+### 2. The procedural fallback (always available, original work)
+
+If the model is absent the game silently uses `Bike` built from Three.js primitives: 19"/17"
+spoked wheels with block tread, long-travel fork with gaiters, round headlight with a mini
+cowl, finned single-cylinder engine, upswept exhaust, flat seat, mono-shock, and a fuel tank
+painted at runtime with a canvas texture (white base, flame graphic, black knee stripe). This
+is original work covered by the repository licence.
 
 "Royal Enfield" and "Scram 411" are trademarks of their owner; this is a fan project and is not
 affiliated with or endorsed by Royal Enfield.
 
-### Swapping in a licensed GLB
+### Using another GLB
 
-If you obtain a properly licensed motorcycle model, set `EXTERNAL_BIKE_MODEL` in
-`src/core/config.ts` to its URL (e.g. `'/models/scram411.glb'` with the file in `public/models/`).
-Loading goes through `GLTFLoader`. For steering and wheel animation, name nodes in the model:
-
-- `FrontWheel`, `RearWheel`: spun about their local X axis.
-- `Steering`: fork + handlebar assembly, rotated about the steering axis.
-
-The model is auto-scaled so the distance between the two wheel nodes matches the configured
-1.455 m wheelbase. Keep textures ≤ 2048 px and prefer a single Draco- or Meshopt-compressed GLB.
+Point `EXTERNAL_BIKE_MODEL` in `src/core/config.ts` at any GLB (relative to the site base).
+The loader assumes the front faces -X and up is +Y; wheels are found by name (`wheel`, `rim`,
+`tyre`, `spoke`) and the steering assembly by position, so most exported motorcycle models
+work without renaming nodes.
 
 ## Dev aids
 
 URL parameters (development only):
 
 - `?autodrive` pins the throttle and follows the road, handy for screenshots and perf checks.
+- In dev builds the game instance is exposed as `window.__bikeRider`.
 - `?camera=chase|cockpit|cinematic`, `?time=day|dusk` override the stored settings for that load.
 
 ## Project layout
@@ -125,7 +150,7 @@ can be dropped on GitHub Pages, Netlify, Vercel or any static host with no confi
 
 ## Roadmap
 
-- Rider figure and richer bike detail; optional licensed GLB.
+- Rider figure; ask Royal Enfield about licensing the model for a public deployment.
 - Obstacles / traffic and a route with elevation changes.
 - Gamepad support and haptics on mobile.
 - Post-processing (bloom for dusk headlights, motion blur at speed) behind the quality setting.

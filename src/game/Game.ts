@@ -3,12 +3,19 @@ import {
   Clock,
   PCFSoftShadowMap,
   PerspectiveCamera,
+  PMREMGenerator,
   Scene,
   SRGBColorSpace,
   Vector3,
   WebGLRenderer,
 } from 'three';
-import { EXTERNAL_BIKE_MODEL, ROAD } from '../core/config';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import {
+  DRACO_DECODER_PATH,
+  EXTERNAL_BIKE_MODEL,
+  ROAD,
+  WHITE_FLAME_RECOLOUR,
+} from '../core/config';
 import { Input } from '../core/Input';
 import {
   autoQuality,
@@ -85,6 +92,12 @@ export class Game {
     this.chase = new ChaseCamera(this.camera);
     this.chase.setMode(this.settings.cameraMode);
 
+    // Neutral studio environment so chrome, clearcoat paint and glass have something to reflect.
+    const pmrem = new PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.55;
+    pmrem.dispose();
+
     this.world = new World(this.scene, this.settings.quality);
     this.scene.add(this.bike.root);
     this.dust = new Dust(this.renderer.getPixelRatio());
@@ -112,14 +125,35 @@ export class Game {
     this.reset();
     this.onResize();
 
-    if (EXTERNAL_BIKE_MODEL) {
-      loadExternalBike(EXTERNAL_BIKE_MODEL, this.bike).catch((err) => {
-        console.warn('External bike model failed to load, using procedural bike.', err);
-      });
-    }
+    if (EXTERNAL_BIKE_MODEL) this.loadModel(EXTERNAL_BIKE_MODEL);
 
     this.clock.start();
     this.raf = requestAnimationFrame(this.frame);
+    if (import.meta.env.DEV) (window as unknown as { __bikeRider?: Game }).__bikeRider = this;
+  }
+
+  /** Read-only view for dev tooling / screenshots. */
+  get bikeModel(): Bike {
+    return this.bike;
+  }
+
+  private loadModel(rel: string): void {
+    const base = import.meta.env.BASE_URL;
+    this.hud.setStatus('Loading Scram 411 model…');
+    loadExternalBike(base + rel, this.bike, {
+      dracoPath: base + DRACO_DECODER_PATH,
+      whiteFlame: WHITE_FLAME_RECOLOUR,
+      onProgress: (f) => this.hud.setStatus(`Loading Scram 411 model… ${Math.round(f * 100)}%`),
+    })
+      .then(() => {
+        this.hud.setStatus(null);
+        this.syncBikeTransform();
+      })
+      .catch((err: unknown) => {
+        // Expected when the gitignored model has not been fetched: keep the procedural bike.
+        console.info('External bike model not available, using procedural bike.', err);
+        this.hud.setStatus(null);
+      });
   }
 
   // -------------------------------------------------------------------------------------

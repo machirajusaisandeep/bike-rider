@@ -1,5 +1,8 @@
 import {
+  Box3,
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   CanvasTexture,
   Color,
   CylinderGeometry,
@@ -13,10 +16,12 @@ import {
   SRGBColorSpace,
   SphereGeometry,
   SpotLight,
+  Texture,
   TorusGeometry,
   Vector3,
 } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BIKE } from '../core/config';
 
@@ -38,6 +43,12 @@ export class Bike {
   readonly rearWheel = new Group();
   readonly headlight: SpotLight;
   readonly tailLight: PointLight;
+  /** Inverse-tilted frame under steerPivot: children are placed in upright bike coordinates. */
+  readonly steerLocal = new Group();
+  /** Non-steering procedural body parts. */
+  readonly body = new Group();
+  /** True once a licensed/external GLB replaced the procedural meshes. */
+  external = false;
   private headlightMat: MeshStandardMaterial;
   private baseSteerQuat = new Quaternion();
   private tailMat: MeshStandardMaterial;
@@ -69,7 +80,7 @@ export class Bike {
     // Align the pivot's local Y with the fork axis so the wheel rotates about the true steering axis.
     this.steerPivot.quaternion.setFromUnitVectors(new Vector3(0, -1, 0), forkDir);
     this.baseSteerQuat.copy(this.steerPivot.quaternion);
-    const steerLocal = new Group();
+    const steerLocal = this.steerLocal;
     // Undo the tilt for children so we can place parts in world-ish local coords.
     steerLocal.quaternion.copy(this.steerPivot.quaternion).invert();
     this.steerPivot.add(steerLocal);
@@ -203,7 +214,7 @@ export class Bike {
     steerLocal.add(caliper);
 
     // --- Body (non-steering) -------------------------------------------------------
-    const body = new Group();
+    const body = this.body;
     this.lean.add(body);
 
     // Frame: half-duplex split cradle, approximated.
@@ -664,38 +675,271 @@ function paintTankTop(): CanvasTexture {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Optional licensed model
+// External model (e.g. Royal Enfield's own Scram 411 GLB fetched locally via `npm run fetch-model`)
 // ---------------------------------------------------------------------------------------------
 
+export interface ExternalBikeOptions {
+  /** Directory containing the Draco decoder (draco_wasm_wrapper.js + draco_decoder.wasm). */
+  dracoPath: string;
+  /** Recolour the tank texture from Graphite Red to the White Flame scheme. */
+  whiteFlame?: boolean;
+  onProgress?: (fraction: number) => void;
+}
+
+const _box = new Box3();
+const _v = new Vector3();
+
 /**
- * Load an external GLB and graft it into the bike hierarchy. Expected optional node names:
- * `FrontWheel`, `RearWheel`, `Steering` (fork + bars). Anything else is treated as body.
- * The model is auto-scaled so its wheelbase matches config.
+ * Load a GLB and graft it into the bike hierarchy so steering, wheel spin and lean keep working.
+ *
+ * Assumptions (true for the Royal Enfield quick-start model, checked in the scratch analysis):
+ *   - front of the bike points to -X, up is +Y, width is Z; units are millimetres
+ *   - both wheels may share single meshes named like "wheels" / "*rim*": these are split by
+ *     triangle centroid into front and rear halves so each can spin about its own axle
+ * Nothing else about the node layout is assumed: fork, bars, headlight and mirrors are picked
+ * by their position relative to the front axle, not by name.
  */
-export async function loadExternalBike(url: string, bike: Bike): Promise<void> {
+export async function loadExternalBike(
+  url: string,
+  bike: Bike,
+  opts: ExternalBikeOptions,
+): Promise<void> {
+  const draco = new DRACOLoader();
+  draco.setDecoderPath(opts.dracoPath);
   const loader = new GLTFLoader();
-  const gltf = await loader.loadAsync(url);
-  const model = gltf.scene;
-  model.traverse((o) => {
-    if ((o as Mesh).isMesh) o.castShadow = true;
+  loader.setDRACOLoader(draco);
+  const gltf = await loader.loadAsync(url, (e) => {
+    if (opts.onProgress && e.total) opts.onProgress(e.loaded / e.total);
   });
-  const front = model.getObjectByName('FrontWheel');
-  const rear = model.getObjectByName('RearWheel');
-  if (front && rear) {
-    const fw = new Vector3();
-    const rw = new Vector3();
-    front.getWorldPosition(fw);
-    rear.getWorldPosition(rw);
-    const wb = fw.distanceTo(rw);
-    if (wb > 0) model.scale.setScalar(BIKE.wheelbase / wb);
+  draco.dispose();
+  const model = gltf.scene;
+
+  // --- normalise orientation + units --------------------------------------------------------
+  const container = new Group();
+  container.rotation.y = -Math.PI / 2; // model -X (front) -> our -Z
+  container.add(model);
+  container.updateMatrixWorld(true);
+  _box.setFromObject(container);
+  const size = _box.getSize(_v.clone());
+  const length = Math.max(size.x, size.z);
+  // Real bike is ~2.16 m long plus mirrors; use the wheelbase later for the exact fit.
+  const s0 = 2.25 / length;
+  container.scale.setScalar(s0);
+  container.updateMatrixWorld(true);
+
+  // --- collect meshes and split shared wheel meshes -----------------------------------------
+  const meshes: Mesh[] = [];
+  model.traverse((o) => {
+    if ((o as Mesh).isMesh) meshes.push(o as Mesh);
+  });
+  const wheelParts: Mesh[] = [];
+  for (const m of meshes) {
+    m.castShadow = true;
+    m.receiveShadow = false;
+    m.frustumCulled = false;
+    if (!/wheel|rim|tyre|tire|spoke/i.test(m.name)) continue;
+    _box.setFromObject(m);
+    const span = _box.max.z - _box.min.z;
+    if (span > 1.2) {
+      // spans both axles -> split at the midpoint
+      const midZ = (_box.min.z + _box.max.z) / 2;
+      const [front, rear] = splitMeshAlongWorldZ(m, midZ);
+      m.parent!.add(front, rear);
+      m.parent!.remove(m);
+      wheelParts.push(front, rear);
+    } else {
+      wheelParts.push(m);
+    }
   }
-  // Hide procedural parts, keep the hierarchy so animation code still works.
-  bike.lean.children.forEach((c) => (c.visible = false));
-  bike.lean.add(model);
-  const steering = model.getObjectByName('Steering');
-  if (steering) bike.steerPivot.attach(steering);
-  if (front) bike.frontWheel.attach(front);
-  if (rear) bike.rearWheel.attach(rear);
-  bike.steerPivot.visible = true;
-  bike.rearWheel.visible = true;
+  container.updateMatrixWorld(true);
+
+  // --- find the axles ----------------------------------------------------------------------
+  const frontBox = new Box3();
+  const rearBox = new Box3();
+  _box.setFromObject(container);
+  const centreZ = (_box.min.z + _box.max.z) / 2;
+  const frontWheelMeshes: Mesh[] = [];
+  const rearWheelMeshes: Mesh[] = [];
+  for (const m of wheelParts) {
+    const b = new Box3().setFromObject(m);
+    const c = b.getCenter(new Vector3());
+    if (c.z < centreZ) {
+      frontBox.union(b);
+      frontWheelMeshes.push(m);
+    } else {
+      rearBox.union(b);
+      rearWheelMeshes.push(m);
+    }
+  }
+  const F = frontBox.getCenter(new Vector3());
+  const R = rearBox.getCenter(new Vector3());
+  const wheelbase = R.z - F.z;
+  console.info(
+    `[bike] external model: length ${length.toFixed(2)} wheelbase ${wheelbase.toFixed(3)} (x${s0.toFixed(3)})`,
+  );
+  // Rescale so the wheelbase matches the physics config exactly, then re-measure.
+  const s1 = (s0 * BIKE.wheelbase) / wheelbase;
+  container.scale.setScalar(s1);
+  container.updateMatrixWorld(true);
+  frontBox.makeEmpty();
+  rearBox.makeEmpty();
+  for (const m of frontWheelMeshes) frontBox.union(new Box3().setFromObject(m));
+  for (const m of rearWheelMeshes) rearBox.union(new Box3().setFromObject(m));
+  frontBox.getCenter(F);
+  rearBox.getCenter(R);
+  const groundY = Math.min(frontBox.min.y, rearBox.min.y);
+  // Put the axle midpoint on the origin and the tyres on the ground.
+  container.position.set(-(F.x + R.x) / 2, -groundY, -(F.z + R.z) / 2);
+  container.updateMatrixWorld(true);
+  F.add(container.position);
+  R.add(container.position);
+
+  // --- hide the procedural bike, keep lights -------------------------------------------------
+  bike.body.traverse((o) => {
+    if ((o as Mesh).isMesh) o.visible = false;
+  });
+  bike.steerLocal.traverse((o) => {
+    if ((o as Mesh).isMesh) o.visible = false;
+  });
+  bike.frontWheel.clear();
+  bike.rearWheel.clear();
+
+  // --- rig: pivots at the axles, fork assembly under the steering pivot ----------------------
+  // Everything below uses world-space boxes, so rig with the bike at the origin, upright,
+  // wheels straight. The game re-syncs root / lean / steer from physics right after.
+  bike.root.position.set(0, 0, 0);
+  bike.root.quaternion.identity();
+  bike.lean.rotation.set(0, 0, 0);
+  bike.setSteer(0);
+  bike.frontWheel.rotation.set(0, 0, 0);
+  bike.rearWheel.rotation.set(0, 0, 0);
+  bike.lean.add(container);
+  bike.root.updateMatrixWorld(true);
+  // Steering head: a point on the fork axis above the front axle.
+  bike.steerPivot.position.set(0, F.y + 0.6, F.z + 0.3);
+  bike.root.updateMatrixWorld(true);
+  bike.frontWheel.position.copy(bike.steerLocal.worldToLocal(F.clone()));
+  bike.rearWheel.position.copy(R);
+  bike.root.updateMatrixWorld(true);
+  for (const m of frontWheelMeshes) bike.frontWheel.attach(m);
+  for (const m of rearWheelMeshes) bike.rearWheel.attach(m);
+
+  const headZ = F.z + 0.32; // behind this we are in tank / frame territory
+  const barY = F.y + 0.7;
+  const remaining: Mesh[] = [];
+  model.traverse((o) => {
+    if ((o as Mesh).isMesh) remaining.push(o as Mesh);
+  });
+  for (const m of remaining) {
+    const b = new Box3().setFromObject(m);
+    const c = b.getCenter(new Vector3());
+    const isFork = c.z < headZ && c.y < barY;
+    const isBars = c.y >= barY && c.z < F.z + 0.58;
+    if (isFork || isBars) bike.steerLocal.attach(m);
+  }
+  // Headlight beam origin roughly at the lamp.
+  bike.headlight.position.set(0, F.y + 0.6, F.z + 0.05);
+
+  // --- materials --------------------------------------------------------------------------
+  if (opts.whiteFlame) {
+    const done = new Set<Texture>();
+    for (const m of remaining) {
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      for (const mat of mats) {
+        const std = mat as MeshStandardMaterial;
+        if (!std.map || !/tank/i.test(std.name) || done.has(std.map)) continue;
+        std.map = swapRedAndWhite(std.map);
+        done.add(std.map);
+        std.needsUpdate = true;
+      }
+    }
+  }
+  bike.external = true;
+}
+
+/** Split a mesh into two meshes by triangle centroid on world Z (front < midZ). */
+function splitMeshAlongWorldZ(mesh: Mesh, midZ: number): [Mesh, Mesh] {
+  const geo = mesh.geometry;
+  const pos = geo.attributes.position as BufferAttribute;
+  const index = geo.index;
+  const triCount = index ? index.count / 3 : pos.count / 3;
+  const frontIdx: number[] = [];
+  const rearIdx: number[] = [];
+  mesh.updateMatrixWorld(true);
+  const a = new Vector3();
+  const b = new Vector3();
+  const c = new Vector3();
+  for (let t = 0; t < triCount; t++) {
+    const i0 = index ? index.getX(t * 3) : t * 3;
+    const i1 = index ? index.getX(t * 3 + 1) : t * 3 + 1;
+    const i2 = index ? index.getX(t * 3 + 2) : t * 3 + 2;
+    a.fromBufferAttribute(pos, i0).applyMatrix4(mesh.matrixWorld);
+    b.fromBufferAttribute(pos, i1).applyMatrix4(mesh.matrixWorld);
+    c.fromBufferAttribute(pos, i2).applyMatrix4(mesh.matrixWorld);
+    const z = (a.z + b.z + c.z) / 3;
+    (z < midZ ? frontIdx : rearIdx).push(i0, i1, i2);
+  }
+  const make = (idx: number[], suffix: string) => {
+    const shared = new BufferGeometry();
+    for (const name of Object.keys(geo.attributes))
+      shared.setAttribute(name, geo.attributes[name]!);
+    shared.setIndex(idx);
+    // Compact into own vertex buffers so bounding boxes describe this half only.
+    const g = shared.toNonIndexed();
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    const m = new Mesh(g, mesh.material);
+    m.name = `${mesh.name}_${suffix}`;
+    m.castShadow = true;
+    m.frustumCulled = false;
+    m.position.copy(mesh.position);
+    m.quaternion.copy(mesh.quaternion);
+    m.scale.copy(mesh.scale);
+    return m;
+  };
+  return [make(frontIdx, 'front'), make(rearIdx, 'rear')];
+}
+
+/** Graphite Red -> White Flame: red areas become white, white areas become flame red. */
+function swapRedAndWhite(src: Texture): Texture {
+  const img = src.image as HTMLImageElement | ImageBitmap | HTMLCanvasElement;
+  const w = img.width;
+  const h = img.height;
+  if (!w || !h) return src;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, w, h);
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i]!;
+    const g = px[i + 1]!;
+    const b = px[i + 2]!;
+    if (r - Math.max(g, b) > 60) {
+      // red -> warm white
+      px[i] = 236;
+      px[i + 1] = 234;
+      px[i + 2] = 230;
+    } else if (r > 150 && g > 150 && b > 150) {
+      // white -> White Flame red (a deep, slightly cool red on the real bike)
+      px[i] = 168;
+      px[i + 1] = 26;
+      px[i + 2] = 34;
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+  const tex = new CanvasTexture(canvas);
+  tex.flipY = src.flipY;
+  tex.wrapS = src.wrapS;
+  tex.wrapT = src.wrapT;
+  tex.repeat.copy(src.repeat);
+  tex.offset.copy(src.offset);
+  tex.rotation = src.rotation;
+  tex.center.copy(src.center);
+  tex.colorSpace = src.colorSpace;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
 }

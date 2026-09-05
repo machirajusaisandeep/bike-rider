@@ -344,6 +344,13 @@ body {
   -webkit-backdrop-filter: blur(12px);
 }
 
+.toast-status {
+  top: calc(112px + var(--safe-t));
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .toast-warn {
   border-color: rgba(255, 90, 31, 0.6);
   box-shadow: 0 0 0 1px rgba(255, 90, 31, 0.25);

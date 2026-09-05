@@ -52,8 +52,11 @@ export const CAMERA = {
 export const GEAR_THRESHOLDS_KMH = [0, 18, 38, 60, 85] as const;
 
 /**
- * Optional external bike model. Set to a URL (e.g. '/models/scram411.glb') to load a
- * licensed GLTF/GLB instead of the built-in procedural model. See README for the
- * expected node naming so wheels and steering still animate.
+ * Optional external bike model, relative to the site base. `npm run fetch-model` places Royal
+ * Enfield's Scram 411 GLB here for local use (it is gitignored, see README). If the file is
+ * missing the game silently keeps the built-in procedural bike.
  */
-export const EXTERNAL_BIKE_MODEL: string | null = null;
+export const EXTERNAL_BIKE_MODEL: string | null = 'models/scram411.glb';
+export const DRACO_DECODER_PATH = 'draco/';
+/** Recolour the model's Graphite Red tank texture to the White Flame scheme. */
+export const WHITE_FLAME_RECOLOUR = true;

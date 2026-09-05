@@ -3,3 +3,8 @@ dist
 .DS_Store
 *.local
 .vite
+
+# Royal Enfield model + Draco decoder are fetched locally via `npm run fetch-model`
+# and intentionally not committed (see README "asset provenance").
+public/models/
+public/draco/

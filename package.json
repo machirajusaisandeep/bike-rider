@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint src",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "fetch-model": "node scripts/fetch-model.mjs"
   },
   "keywords": [],
   "author": "",

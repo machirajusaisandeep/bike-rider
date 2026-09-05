@@ -74,6 +74,7 @@ export class Hud {
   private pauseOverlay: HTMLElement;
   private settingsPanel: HTMLElement;
   private offRouteEl: HTMLElement;
+  private statusEl: HTMLElement;
   private startHint: HTMLElement;
   private touchEl: HTMLElement;
   private settings: Settings;
@@ -164,6 +165,9 @@ export class Hud {
     );
     this.offRouteEl.hidden = true;
     this.root.appendChild(this.offRouteEl);
+    this.statusEl = el('div', 'toast toast-status', '');
+    this.statusEl.hidden = true;
+    this.root.appendChild(this.statusEl);
     this.startHint = el(
       'div',
       'start-hint',
@@ -331,6 +335,12 @@ export class Hud {
 
   private emitSettings(): void {
     this.cb.onSettingsChange({ ...this.settings });
+  }
+
+  /** Transient status line (model loading etc.). Pass null to hide. */
+  setStatus(text: string | null): void {
+    this.statusEl.hidden = !text;
+    if (text) this.statusEl.textContent = text;
   }
 
   toggleSettings(force?: boolean): void {
