@@ -9,6 +9,10 @@ export interface CameraFocus {
   yaw: number;
   /** Shift the target left on screen so the subject sits on the right side (metres). */
   sideOffset: number;
+  /** Drop the look-at point (m) so the subject sits higher in the frame — room for a bottom UI. */
+  screenLift?: number;
+  /** Override FOV while focused. Defaults to 40. */
+  fov?: number;
 }
 import { CAMERA } from '../core/config';
 import type { CameraMode } from '../core/settings';
@@ -89,6 +93,7 @@ export class ChaseCamera {
       _desired.copy(f.target).addScaledVector(dir, f.distance);
       _desired.y = f.target.y + f.height;
       _target.copy(f.target).addScaledVector(rightV, -f.sideOffset);
+      _target.y -= f.screenLift ?? 0;
       const lag = 6;
       this.pos.lerp(_desired, Math.min(1, lag * dt));
       this.lookAt.lerp(_target, Math.min(1, lag * dt));
@@ -99,8 +104,9 @@ export class ChaseCamera {
       }
       cam.position.copy(this.pos);
       cam.lookAt(this.lookAt);
-      if (Math.abs(cam.fov - 40) > 0.01) {
-        cam.fov = MathUtils.lerp(cam.fov, 40, Math.min(1, 3 * dt));
+      const fov = f.fov ?? 40;
+      if (Math.abs(cam.fov - fov) > 0.01) {
+        cam.fov = MathUtils.lerp(cam.fov, fov, Math.min(1, 3 * dt));
         cam.updateProjectionMatrix();
       }
       return;

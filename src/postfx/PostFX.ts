@@ -7,6 +7,12 @@ import {
   WebGLRenderTarget,
   WebGLRenderer,
 } from 'three';
+
+/** Draw calls / triangles of the scene pass alone, before the post chain overwrites renderer.info. */
+export interface SceneRenderInfo {
+  calls: number;
+  triangles: number;
+}
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -52,12 +58,34 @@ const GRADE = new ShaderMaterial({
     }`,
 });
 
+/**
+ * RenderPass that snapshots renderer.info right after the scene has been drawn. renderer.info
+ * auto-resets on every renderer.render(), so by the end of the composer chain it only describes
+ * the last full-screen quad (1 call, 1 triangle) - useless for profiling.
+ */
+class StatsRenderPass extends RenderPass {
+  readonly info: SceneRenderInfo = { calls: 0, triangles: 0 };
+
+  override render(
+    renderer: WebGLRenderer,
+    writeBuffer: WebGLRenderTarget,
+    readBuffer: WebGLRenderTarget,
+    deltaTime: number,
+    maskActive: boolean,
+  ): void {
+    super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    this.info.calls = renderer.info.render.calls;
+    this.info.triangles = renderer.info.render.triangles;
+  }
+}
+
 /** Bloom + colour grade + tone-mapped output. Disabled entirely on Low quality. */
 export class PostFX {
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
   private grade: ShaderPass;
   private target: WebGLRenderTarget;
+  private scenePass: StatsRenderPass;
 
   constructor(
     private renderer: WebGLRenderer,
@@ -69,7 +97,8 @@ export class PostFX {
     // refuse on float targets.
     this.target = new WebGLRenderTarget(size.x, size.y, { type: HalfFloatType });
     this.composer = new EffectComposer(renderer, this.target);
-    this.composer.addPass(new RenderPass(scene, camera));
+    this.scenePass = new StatsRenderPass(scene, camera);
+    this.composer.addPass(this.scenePass);
     // High threshold: only the sun disc, headlights, windows and specular hits bloom, not the sky.
     this.bloom = new UnrealBloomPass(size, 0.22, 0.45, 1.6);
     this.composer.addPass(this.bloom);
@@ -105,6 +134,16 @@ export class PostFX {
   render(dt: number): void {
     this.grade.uniforms.uTime!.value += dt;
     this.composer.render(dt);
+  }
+
+  /** Scene-only draw stats from the last frame. */
+  get sceneInfo(): SceneRenderInfo {
+    return this.scenePass.info;
+  }
+
+  /** Number of enabled passes after the scene pass (bloom, grade, output, SMAA). */
+  get passCount(): number {
+    return this.composer.passes.filter((p) => p.enabled).length - 1;
   }
 
   dispose(): void {

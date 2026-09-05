@@ -1,6 +1,7 @@
 import { Vector3 } from 'three';
-import { BIKE, GEAR_THRESHOLDS_KMH } from '../core/config';
+import { BIKE } from '../core/config';
 import type { InputState } from '../core/Input';
+import { DEFAULT_CHASSIS, gearThresholdsKmh, type BikeChassis } from './bikes';
 
 export type Surface = 'asphalt' | 'gravel' | 'off' | 'wet';
 
@@ -36,8 +37,14 @@ export class BikePhysics {
   crashed = false;
   /** Multipliers from bike upgrades (1 = stock). */
   tune = { power: 1, brakes: 1, grip: 1, offroad: 1 };
+  /** Selected bike's chassis. Defaults to the starter Scram. */
+  chassis: BikeChassis = { ...DEFAULT_CHASSIS, seat: { ...DEFAULT_CHASSIS.seat } };
 
   readonly forward = new Vector3(0, 0, -1);
+
+  setChassis(c: BikeChassis): void {
+    this.chassis = { ...c, seat: { ...c.seat } };
+  }
 
   reset(x: number, z: number, heading = 0): void {
     this.position.set(x, 0, z);
@@ -79,17 +86,22 @@ export class BikePhysics {
   }
 
   get speedRatio(): number {
-    return clamp(Math.abs(this.speed) / BIKE.maxSpeed, 0, 1);
+    return clamp(Math.abs(this.speed) / this.chassis.maxSpeed, 0, 1);
   }
 
-  /** 1..5, or 0 for neutral/reverse */
+  private get gearThresholds(): number[] {
+    return gearThresholdsKmh(this.chassis);
+  }
+
+  /** 1..N, or 0 for neutral/reverse */
   get gear(): number {
     if (this.speed < -0.3) return -1;
     const kmh = this.speedKmh;
     if (kmh < 1) return 0;
+    const th = this.gearThresholds;
     let g = 1;
-    for (let i = 1; i < GEAR_THRESHOLDS_KMH.length; i++) {
-      if (kmh >= GEAR_THRESHOLDS_KMH[i]!) g = i + 1;
+    for (let i = 1; i < th.length; i++) {
+      if (kmh >= th[i]!) g = i + 1;
     }
     return g;
   }
@@ -98,8 +110,9 @@ export class BikePhysics {
   get rpm(): number {
     const g = this.gear;
     if (g <= 0) return 0.12;
-    const lo = GEAR_THRESHOLDS_KMH[g - 1] ?? 0;
-    const hi = GEAR_THRESHOLDS_KMH[g] ?? BIKE.maxSpeed * 3.6;
+    const th = this.gearThresholds;
+    const lo = th[g - 1] ?? 0;
+    const hi = th[g] ?? this.chassis.maxSpeed * 3.6;
     const t = clamp((this.speedKmh - lo) / (hi - lo), 0, 1);
     return 0.22 + t * 0.7;
   }
@@ -123,7 +136,7 @@ export class BikePhysics {
       // Power tails off approaching top speed.
       a +=
         input.throttle *
-        BIKE.accel *
+        this.chassis.accel *
         this.tune.power *
         (1 - 0.55 * ratio * ratio) *
         (0.6 + 0.4 * grip);
@@ -154,7 +167,8 @@ export class BikePhysics {
     nv = clamp(
       nv,
       -BIKE.maxReverseSpeed,
-      BIKE.maxSpeed * (this.surface === 'off' ? 0.35 : this.surface === 'gravel' ? 0.75 : 1),
+      this.chassis.maxSpeed *
+        (this.surface === 'off' ? 0.35 : this.surface === 'gravel' ? 0.75 : 1),
     );
     if (Math.abs(nv) < 0.02 && input.throttle === 0 && input.brake === 0) nv = 0;
     this.speed = nv;
@@ -164,12 +178,15 @@ export class BikePhysics {
     const latMax =
       BIKE.gravity * (BIKE.latGripLow + (BIKE.latGripHigh - BIKE.latGripLow) * smoothstep(ratio));
     const v2 = Math.max(0.25, this.speed * this.speed);
-    const maxSteer = Math.min(BIKE.steerMaxLow, Math.atan((latMax * BIKE.wheelbase) / v2));
+    const maxSteer = Math.min(
+      BIKE.steerMaxLow,
+      Math.atan((latMax * this.chassis.wheelbase) / v2),
+    );
     const targetSteer = input.steer * maxSteer;
     this.steerAngle += (targetSteer - this.steerAngle) * Math.min(1, BIKE.steerResponse * dt);
 
     const effectiveV = this.speed;
-    let yawRate = -(effectiveV / BIKE.wheelbase) * Math.tan(this.steerAngle);
+    let yawRate = -(effectiveV / this.chassis.wheelbase) * Math.tan(this.steerAngle);
     yawRate *= 0.8 + 0.2 * grip;
     yawRate = clamp(yawRate, -2.2, 2.2);
     this.yawRate = yawRate;
@@ -190,7 +207,7 @@ export class BikePhysics {
     this.frameDistance = dist;
     this.position.addScaledVector(this.forward, dist);
     // Elevation + pitch from the terrain sampled at the wheel contact points.
-    const half = BIKE.wheelbase / 2;
+    const half = this.chassis.wheelbase / 2;
     const fx = this.position.x + this.forward.x * half;
     const fz = this.position.z + this.forward.z * half;
     const rx = this.position.x - this.forward.x * half;
@@ -198,7 +215,7 @@ export class BikePhysics {
     const hf = this.heightAt(fx, fz);
     const hr = this.heightAt(rx, rz);
     this.position.y = (hf + hr) / 2;
-    const targetPitch = Math.atan2(hf - hr, BIKE.wheelbase);
+    const targetPitch = Math.atan2(hf - hr, this.chassis.wheelbase);
     this.pitch += (targetPitch - this.pitch) * Math.min(1, 10 * dt);
   }
 

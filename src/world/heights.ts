@@ -44,12 +44,15 @@ export class HeightField {
       const s = Math.sign(lat) * 300 * Math.tanh(Math.abs(lat) / 300) * t.hillside;
       h += s * (0.7 + 0.3 * Math.sin(z * 0.004));
     }
-    // Sea: drop off a cliff beyond the shore distance.
+    // Sea: a laterite lip, a near-vertical cliff face, a flat beach strip, then the sea floor.
     const w = this.def.water;
     if (w) {
       const d = w.side * lat;
-      const drop = smoothstep(w.shore, w.shore + 14, d);
-      h = lerp(h, w.level - 6 - Math.max(0, d - w.shore) * 0.05, drop);
+      const cliffW = 10;
+      const drop = smoothstep(w.shore, w.shore + cliffW, d);
+      const lip = smoothstep(w.shore - 12, w.shore, d) * 1.4;
+      const beachY = w.level + 1.6 - Math.max(0, d - (w.shore + cliffW + w.beach)) * 0.09;
+      h = lerp(h + lip, beachY, drop);
     }
     return h + this.path.elevation(z);
   }

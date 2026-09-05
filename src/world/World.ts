@@ -1,4 +1,5 @@
 import { Color, Scene, Vector3, WebGLRenderer } from 'three';
+import { TRAFFIC } from '../core/config';
 import type { Quality, TimeOfDay } from '../core/settings';
 import type { Surface } from '../game/BikePhysics';
 import { Atmosphere } from './Atmosphere';
@@ -92,6 +93,7 @@ export class World {
     this.traffic = null;
     if (seed === null) return;
     this.traffic = new Traffic(this.heights, this.def, seed, this.quality, density);
+    this.traffic.setLamps(this.headlightsOn);
     this.scene.add(this.traffic.group);
   }
 
@@ -99,6 +101,7 @@ export class World {
     this.time = t;
     this.atmosphere.apply(this.def, t, (e) => (this._exposure = e));
     this.city?.setNight(this.atmosphere.isNight, this.atmosphere.isDusk);
+    this.traffic?.setLamps(this.headlightsOn);
     this.scene.background = null; // the sky mesh is the background
     this.applyWeatherParams();
   }
@@ -169,8 +172,14 @@ export class World {
     return this.distanceFromRoad(x, z) > 60 || y < this.path.elevation(z) - 25;
   }
 
+  /**
+   * Spawn in the left-hand (same-direction) lane rather than astride the centre line: India
+   * drives on the left, and on the ring road the median carries metro piers.
+   */
   spawnAt(z: number): { x: number; z: number; heading: number } {
-    return { x: this.path.centerX(z), z, heading: this.path.heading(z) };
+    const half = this.path.width / 2;
+    const lane = this.path.width >= 9 ? half * 0.36 : half * TRAFFIC.laneFraction;
+    return { x: this.path.centerX(z) - lane, z, heading: this.path.heading(z) };
   }
 
   update(

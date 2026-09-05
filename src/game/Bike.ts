@@ -24,6 +24,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { BIKE } from '../core/config';
+import type { BikeDef, BikeEngine, BikeFamily } from './bikes';
 
 /**
  * A Royal Enfield Scram 411 "White Flame"-inspired bike built from primitives.
@@ -53,6 +54,12 @@ export class Bike {
   private mats!: Materials;
   private baseSteerQuat = new Quaternion();
   private tailMat: MeshStandardMaterial;
+  private frontRadius = BIKE.frontWheelRadius as number;
+  private rearRadius = BIKE.rearWheelRadius as number;
+  /** Family-specific add-ons parented to the body (cleared on family change). */
+  private extras = new Group();
+  /** Family-specific add-ons on the steering assembly. */
+  private steerExtras = new Group();
 
   constructor() {
     this.root.add(this.lean);
@@ -86,6 +93,7 @@ export class Bike {
     // Undo the tilt for children so we can place parts in world-ish local coords.
     steerLocal.quaternion.copy(this.steerPivot.quaternion).invert();
     this.steerPivot.add(steerLocal);
+    steerLocal.add(this.steerExtras);
 
     const frontLocal = F.clone().sub(HEAD);
     this.frontWheel.position.copy(frontLocal);
@@ -218,6 +226,7 @@ export class Bike {
     // --- Body (non-steering) -------------------------------------------------------
     const body = this.body;
     this.lean.add(body);
+    body.add(this.extras);
 
     // Frame: half-duplex split cradle, approximated.
     const frame = M.blackGloss;
@@ -346,6 +355,7 @@ export class Bike {
       M.whitePaint, // +z
       M.whitePaint, // -z
     ]);
+    tank.name = 'tank';
     tank.position.set(0, 0.86, -0.13);
     tank.rotation.x = 0.1;
     tank.scale.set(1, 1, 1);
@@ -457,8 +467,44 @@ export class Bike {
   }
 
   spin(distance: number): void {
-    this.frontWheel.rotation.x -= distance / BIKE.frontWheelRadius;
-    this.rearWheel.rotation.x -= distance / BIKE.rearWheelRadius;
+    this.frontWheel.rotation.x -= distance / this.frontRadius;
+    this.rearWheel.rotation.x -= distance / this.rearRadius;
+  }
+
+  /**
+   * Apply a catalog bike's look: wheel scale, paint, tank wordmark and family extras.
+   * Drops any grafted RE GLB so every bike is visually distinct in the garage.
+   */
+  setLook(def: BikeDef): void {
+    this.unloadExternal();
+    this.frontRadius = def.chassis.frontWheelRadius;
+    this.rearRadius = def.chassis.rearWheelRadius;
+    this.frontWheel.scale.setScalar(def.chassis.frontWheelRadius / BIKE.frontWheelRadius);
+    this.rearWheel.scale.setScalar(def.chassis.rearWheelRadius / BIKE.rearWheelRadius);
+    this.setPaint(def.paint, def.accent);
+    this.setTankLabel(def.name);
+    this.setFamily(def.family, def.chassis.engine);
+  }
+
+  /** Restore the procedural bike after `loadExternalBike` grafted a GLB. */
+  unloadExternal(): void {
+    if (!this.external) return;
+    const grafted: Object3D[] = [];
+    this.lean.children.forEach((c) => {
+      if (c !== this.steerPivot && c !== this.rearWheel && c !== this.body) grafted.push(c);
+    });
+    for (const c of grafted) this.lean.remove(c);
+    this.body.traverse((o) => {
+      if ((o as Mesh).isMesh) o.visible = true;
+    });
+    this.steerLocal.traverse((o) => {
+      if ((o as Mesh).isMesh) o.visible = true;
+    });
+    if (this.frontWheel.children.length === 0)
+      this.frontWheel.add(buildWheel(BIKE.frontWheelRadius, 0.1, this.mats));
+    if (this.rearWheel.children.length === 0)
+      this.rearWheel.add(buildWheel(BIKE.rearWheelRadius, 0.125, this.mats));
+    this.external = false;
   }
 
   /**
@@ -472,6 +518,101 @@ export class Bike {
     M.tankSide.color.set(paint);
     M.tankTop.color.set(paint);
     M.flameAccent.color.set(accent);
+  }
+
+  private setTankLabel(name: string): void {
+    const side = paintTankSide(name);
+    const top = paintTankTop();
+    this.mats.tankSide.map?.dispose();
+    this.mats.tankTop.map?.dispose();
+    this.mats.tankSide.map = side;
+    this.mats.tankTop.map = top;
+    this.mats.tankSide.needsUpdate = true;
+    this.mats.tankTop.needsUpdate = true;
+  }
+
+  private setFamily(family: BikeFamily, engine: BikeEngine): void {
+    this.extras.clear();
+    this.steerExtras.clear();
+    const M = this.mats;
+    const tank = this.body.getObjectByName('tank');
+    if (tank) {
+      if (family === 'heritage') tank.scale.set(1.08, 1.18, 0.82);
+      else if (family === 'cruiser') tank.scale.set(1.18, 0.88, 1.15);
+      else if (family === 'cafe') tank.scale.set(0.88, 0.82, 1.18);
+      else if (family === 'adventure') tank.scale.set(1.2, 1.08, 1.05);
+      else if (family === 'roadster') tank.scale.set(0.92, 0.92, 0.95);
+      else tank.scale.set(1, 1, 1);
+    }
+
+    if (family === 'adventure') {
+      const beak = new Mesh(new BoxGeometry(0.26, 0.07, 0.32), M.blackMatte);
+      beak.position.set(0, 0.04, -0.34);
+      beak.rotation.x = 0.35;
+      this.steerExtras.add(beak);
+      const screen = new Mesh(new BoxGeometry(0.28, 0.16, 0.02), M.blackGloss);
+      screen.position.set(0, 0.22, -0.22);
+      screen.rotation.x = -0.35;
+      this.steerExtras.add(screen);
+      for (const side of [-1, 1]) {
+        const bar = new Mesh(new CylinderGeometry(0.012, 0.012, 0.42, 8), M.blackMatte);
+        bar.position.set(side * 0.22, 0.42, 0.08);
+        bar.rotation.x = 0.4;
+        this.extras.add(bar);
+      }
+    }
+
+    if (family === 'heritage') {
+      const shockTop = new Vector3(-0.08, 0.72, 0.5);
+      const shockBottom = new Vector3(-0.08, 0.42, 0.62);
+      this.extras.add(tube(shockTop, shockBottom, 0.016, M.aluminium));
+      const spring = new Mesh(new CylinderGeometry(0.032, 0.032, 0.22, 12, 1, true), M.spring);
+      spring.position.copy(shockTop).lerp(shockBottom, 0.5);
+      this.extras.add(spring);
+      const shockTopR = new Vector3(0.08, 0.72, 0.5);
+      const shockBottomR = new Vector3(0.08, 0.42, 0.62);
+      this.extras.add(tube(shockTopR, shockBottomR, 0.016, M.aluminium));
+    }
+
+    if (family === 'cruiser') {
+      const fender = new Mesh(new BoxGeometry(0.34, 0.06, 0.5), M.whitePaint);
+      fender.position.set(0, 0.62, 0.72);
+      this.extras.add(fender);
+    }
+
+    if (family === 'cafe') {
+      for (const side of [-1, 1]) {
+        const clip = new Mesh(new CylinderGeometry(0.012, 0.012, 0.18, 8), M.blackGloss);
+        clip.position.set(side * 0.22, 0.12, -0.04);
+        clip.rotation.z = side * 0.7;
+        clip.rotation.x = 0.5;
+        this.steerExtras.add(clip);
+      }
+    }
+
+    if (engine === 'twin' || family === 'cafe') {
+      const muffler = new Mesh(new CylinderGeometry(0.042, 0.05, 0.5, 16), M.blackGloss);
+      muffler.position.set(-0.225, 0.52, 0.7);
+      muffler.rotation.x = Math.PI / 2 - 0.28;
+      this.extras.add(muffler);
+      const tip = new Mesh(new CylinderGeometry(0.046, 0.038, 0.05, 16), M.steel);
+      tip.position.set(-0.225, 0.6, 0.94);
+      tip.rotation.x = Math.PI / 2 - 0.28;
+      this.extras.add(tip);
+    }
+
+    this.extras.traverse((o) => {
+      if ((o as Mesh).isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = false;
+      }
+    });
+    this.steerExtras.traverse((o) => {
+      if ((o as Mesh).isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = false;
+      }
+    });
   }
 
   setLights(on: boolean, braking: boolean): void {
@@ -575,7 +716,7 @@ function createMaterials(): Materials {
     metalness: number,
     extra: Partial<MeshStandardMaterial> = {},
   ) => new MeshStandardMaterial({ color: c, roughness, metalness, ...extra });
-  const sideTex = paintTankSide();
+  const sideTex = paintTankSide('SCRAM 440');
   const topTex = paintTankTop();
   return {
     blackMatte: std(0x141517, 0.85, 0.2),
@@ -607,7 +748,7 @@ function createMaterials(): Materials {
 }
 
 /** White base with an orange/red flame graphic licking back from the front of the tank. */
-function paintTankSide(): CanvasTexture {
+function paintTankSide(label = 'SCRAM 440'): CanvasTexture {
   const w = 1024;
   const h = 512;
   const c = document.createElement('canvas');
@@ -661,7 +802,7 @@ function paintTankSide(): CanvasTexture {
   ctx.font = 'bold 44px "Helvetica Neue", Arial, sans-serif';
   ctx.textBaseline = 'middle';
   ctx.letterSpacing = '6px';
-  ctx.fillText('SCRAM 411', w * 0.62, h * 0.5);
+  ctx.fillText(label.toUpperCase().slice(0, 14), w * 0.58, h * 0.5);
 
   const tex = new CanvasTexture(c);
   tex.colorSpace = SRGBColorSpace;

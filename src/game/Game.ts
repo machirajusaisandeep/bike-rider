@@ -10,13 +10,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { initAnalytics, track } from '../core/analytics';
-import {
-  DRACO_DECODER_PATH,
-  EXTERNAL_BIKE_MODEL,
-  ROAD,
-  TRAFFIC,
-  WHITE_FLAME_RECOLOUR,
-} from '../core/config';
+import { ROAD, TRAFFIC } from '../core/config';
 import { Input, type InputState } from '../core/Input';
 import { loadProfile, recordRun, type Profile } from '../core/profile';
 import { dailyScene, dailySeed, parseSeed, randomSeed, todayKey, type Seed } from '../core/seed';
@@ -27,7 +21,7 @@ import {
   type Quality,
   type Settings,
 } from '../core/settings';
-import { PostFX } from '../postfx/PostFX';
+import { PostFX, type SceneRenderInfo } from '../postfx/PostFX';
 import { Hud } from '../ui/Hud';
 import { Menu } from '../ui/Menu';
 import { Summary } from '../ui/Summary';
@@ -41,7 +35,7 @@ import {
   type Mission,
   type MissionLive,
 } from './missions';
-import { BIKE_BY_ID, tuneFor } from './upgrades';
+import { bikeById, tuneFor } from './upgrades';
 import { saveProfile } from '../core/profile';
 import type { WeatherId } from '../world/Weather';
 import { RoutesPanel } from '../ui/Routes';
@@ -57,7 +51,7 @@ import { Dust } from '../world/Dust';
 import { isSceneId, SCENE_BY_ID, type SceneId } from '../world/scenes';
 import type { Contact, NearMiss } from '../world/Traffic';
 import { World } from '../world/World';
-import { Bike, loadExternalBike } from './Bike';
+import { Bike } from './Bike';
 import { BikePhysics } from './BikePhysics';
 import { ChaseCamera } from './ChaseCamera';
 import { EngineAudio } from './EngineAudio';
@@ -266,7 +260,7 @@ export class Game {
       onFocus: (tab) => this.focusRider(tab),
       onModeChange: (mode) => track('mode_select', { mode }),
       onOpenMissions: () => this.missionsPanel.show(this.menu.current),
-      onOpenGarage: () => this.garage.show(),
+      onOpenGarage: () => this.openGarage(),
       onOpenRoutes: () => this.routesPanel.show(),
     });
     this.routesPanel = new RoutesPanel(container, () => this.profile, {
@@ -289,7 +283,7 @@ export class Game {
         this.applyGarage();
         this.refreshProgress();
       },
-      onClose: () => this.garage.hide(),
+      onClose: () => this.closeGarage(),
     });
     this.photo = new PhotoMode(container, {
       onClose: () => this.closePhoto(),
@@ -349,7 +343,9 @@ export class Game {
     this.reset();
     this.onResize();
 
-    if (EXTERNAL_BIKE_MODEL) this.loadModel(EXTERNAL_BIKE_MODEL);
+    // Procedural families are the garage visuals. The local RE GLB is optional and only
+    // used if the player is still on the starter when we try it later; skip auto-load so
+    // switching bikes is always visible.
 
     const skipMenu = this.params.has('nomenu') || this.autodrive;
     if (skipMenu) {
@@ -381,22 +377,41 @@ export class Game {
     fps: number;
     scene: string;
     external: boolean;
+    /** @deprecated alias of postEnabled */
     post: boolean;
+    postEnabled: boolean;
+    /** Full-screen passes run after the scene pass (0 when post is off). */
+    postPasses: number;
+    /** Scene pass only: what the world actually costs, independent of post. */
+    sceneDrawCalls: number;
+    sceneTriangles: number;
+    /** @deprecated aliases of sceneDrawCalls / sceneTriangles */
     drawCalls: number;
     triangles: number;
+    geometries: number;
+    textures: number;
+    programs: number;
     speedKmh: number;
     score: number;
     phase: string;
     traffic: number;
   } {
-    const info = this.renderer.info.render;
+    const scene = this.post ? this.post.sceneInfo : this.sceneInfo;
+    const mem = this.renderer.info.memory;
     return {
       fps: Math.round(this.fps * 10) / 10,
       scene: this.world.sceneId,
       external: this.bike.external,
       post: !!this.post,
-      drawCalls: info.calls,
-      triangles: info.triangles,
+      postEnabled: !!this.post,
+      postPasses: this.post?.passCount ?? 0,
+      sceneDrawCalls: scene.calls,
+      sceneTriangles: scene.triangles,
+      drawCalls: scene.calls,
+      triangles: scene.triangles,
+      geometries: mem.geometries,
+      textures: mem.textures,
+      programs: this.renderer.info.programs?.length ?? 0,
       speedKmh: Math.round(this.physics.speedKmh),
       score: this.scoring.rounded,
       phase: this.run.phase,
@@ -506,9 +521,11 @@ export class Game {
       .addScaledVector(side, 2.2)
       .add(new Vector3(0, 0.8, 0));
     this.riderFill.target.position.copy(chest);
+    // The studio lights top up the sun, they do not replace it: in daylight the key only lifts
+    // the shadow side of the face, at night it is the main light.
     const night = this.world.atmosphere.isNight;
-    this.riderKey.intensity = night ? 4.5 : 3.2;
-    this.riderFill.intensity = night ? 1.6 : 1.1;
+    this.riderKey.intensity = night ? 3.2 : 1.3;
+    this.riderFill.intensity = night ? 1.1 : 0.45;
   }
 
   private seatRider(): void {
@@ -518,7 +535,8 @@ export class Game {
     this.bike.lean.add(this.rider.root);
     // The GLB faces +Z (Blender -Y front), the bike faces -Z: half turn. Rig hips are at y 0.91
     // in the rest pose and the saddle top is ~0.80, so drop the root to seat the pelvis.
-    this.rider.root.position.set(0, -0.13, 0.4);
+    const seat = this.physics.chassis.seat;
+    this.rider.root.position.set(0, seat.y, seat.z);
     this.rider.root.rotation.set(0, Math.PI, 0);
     this.rider.setPose('ride');
     this.riderStanding = false;
@@ -1108,10 +1126,75 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ garage / weather -----
+  private garageFromMenu = false;
+
+  private openGarage(): void {
+    this.garageFromMenu = this.menu.visible;
+    if (this.garageFromMenu) this.menu.hide();
+    this.summary.hide();
+    this.paused = false;
+    this.hud.setPaused(false);
+    this.attract = true;
+    this.hud.setMenuOpen(true);
+    this.world.setTraffic(null);
+    this.physics.crashed = false;
+    this.reset();
+    this.seatRider();
+    this.rider.root.visible = false;
+    this.frameGarageBike();
+    this.garage.show();
+  }
+
+  private closeGarage(): void {
+    this.garage.hide();
+    this.rider.root.visible = true;
+    this.chase.setFocus(null);
+    this.chase.setCloseUp(false);
+    if (this.garageFromMenu) {
+      this.menu.show('scene');
+      this.onMenuStep('scene');
+    } else {
+      this.hud.setMenuOpen(false);
+      this.attract = false;
+      this.chase.setMode(this.savedCamera);
+    }
+  }
+
+  private frameGarageBike(): void {
+    const p = this.physics;
+    p.lean = 0;
+    p.steerAngle = 0;
+    this.bike.setLean(0);
+    this.bike.setSteer(0);
+    // Side-on, pulled back, look-at dropped so the whole bike sits in the top half
+    // above the picker sheet.
+    const yaw = p.heading + Math.PI * 0.55;
+    this.chase.setFocus({
+      target: p.position.clone().add(new Vector3(0, 0.55, 0)),
+      distance: 6.2,
+      height: 1.35,
+      yaw,
+      sideOffset: 0,
+      screenLift: 1.85,
+      fov: 38,
+    });
+    this.chase.resetSmoothing();
+  }
+
   private applyGarage(): void {
+    const bike = bikeById(this.profile.bike);
     this.physics.tune = tuneFor(this.profile);
-    const bike = BIKE_BY_ID[this.profile.bike] ?? BIKE_BY_ID['scram']!;
-    this.bike.setPaint(bike.paint, bike.accent);
+    this.physics.setChassis(bike.chassis);
+    this.bike.setLook(bike);
+    this.audio.setEngine(bike.chassis.engine);
+    this.hud.setBikeName(bike.name);
+    if (this.rider.root.parent === this.bike.lean) {
+      this.rider.root.position.set(0, bike.chassis.seat.y, bike.chassis.seat.z);
+    }
+    if (this.garage.visible) {
+      this.rider.root.visible = false;
+      this.frameGarageBike();
+    }
   }
 
   /** Applies settings.weather if unlocked; otherwise snaps the setting back to clear. */
@@ -1304,31 +1387,15 @@ export class Game {
     // Bloom samples the HDR buffer before exposure, so express the threshold in post-exposure
     // terms: only pixels that would tone-map brighter than white should glow.
     const exposure = Math.max(0.05, this.world.exposure);
+    // Daylight threshold sits well above white so lit diffuse surfaces (shirts, buses, snow)
+    // never glow; only emitters and specular hits do.
     this.post?.setLook({
-      bloom: night ? 0.5 : dusk ? 0.22 : 0.12,
-      bloomThreshold: (night ? 0.75 : dusk ? 1.05 : 1.2) / exposure,
+      bloom: night ? 0.5 : dusk ? 0.2 : 0.1,
+      bloomThreshold: (night ? 0.75 : dusk ? 1.1 : 1.55) / exposure,
       warm: dusk ? 1 : night ? -0.6 : 0.2,
       saturation: this.world.def.category === 'Greenery' ? 1.12 : 1.06,
       vignette: night ? 0.45 : 0.3,
     });
-  }
-
-  private loadModel(rel: string): void {
-    const base = import.meta.env.BASE_URL;
-    this.hud.setStatus('Loading Scram 411 model…');
-    loadExternalBike(base + rel, this.bike, {
-      dracoPath: base + DRACO_DECODER_PATH,
-      whiteFlame: WHITE_FLAME_RECOLOUR,
-      onProgress: (f) => this.hud.setStatus(`Loading Scram 411 model… ${Math.round(f * 100)}%`),
-    })
-      .then(() => {
-        this.hud.setStatus(null);
-        this.syncBikeTransform();
-      })
-      .catch((err: unknown) => {
-        console.info('External bike model not available, using procedural bike.', err);
-        this.hud.setStatus(null);
-      });
   }
 
   // ------------------------------------------------------------------ controls ------------
@@ -1436,8 +1503,15 @@ export class Game {
     }
 
     if (this.post) this.post.render(dt);
-    else this.renderer.render(this.scene, this.camera);
+    else {
+      this.renderer.render(this.scene, this.camera);
+      this.sceneInfo.calls = this.renderer.info.render.calls;
+      this.sceneInfo.triangles = this.renderer.info.render.triangles;
+    }
   };
+
+  /** Scene-pass draw stats when post-processing is off (PostFX keeps its own otherwise). */
+  private sceneInfo: SceneRenderInfo = { calls: 0, triangles: 0 };
 
   /** One simulation tick (input, physics, traffic, scoring, HUD). No rendering. */
   private step(dt: number): void {
@@ -1447,14 +1521,21 @@ export class Game {
     // Crash slide plays in slow motion.
     const simDt = run.phase === 'crashed' ? dt * CRASH_SLOWMO : dt;
 
-    if (this.autodrive || (this.attract && !this.riderStanding)) this.applyAutodrive();
+    if (this.garage.visible) {
+      this.input.setVirtual('up', false);
+      this.input.setVirtual('left', false);
+      this.input.setVirtual('right', false);
+    } else if (this.autodrive || (this.attract && !this.riderStanding)) this.applyAutodrive();
     else if (this.riderStanding) {
       this.input.setVirtual('up', false);
       this.input.setVirtual('left', false);
       this.input.setVirtual('right', false);
     }
     this.input.update(dt);
-    const drive = this.attract || run.controllable ? this.input.state : NO_INPUT;
+    const drive =
+      this.garage.visible || (!this.attract && !run.controllable)
+        ? NO_INPUT
+        : this.input.state;
 
     this.accumulator += simDt;
     while (this.accumulator >= FIXED_DT) {
@@ -1539,6 +1620,8 @@ export class Game {
           this.world.distanceFromRoad(p.position.x, p.position.z) > ROAD.offRouteDistance,
         distanceKm: this.distance / 1000,
         fps: this.fps,
+        drawCalls: (this.post ? this.post.sceneInfo : this.sceneInfo).calls,
+        triangles: (this.post ? this.post.sceneInfo : this.sceneInfo).triangles,
         moving: p.speedKmh > 2,
       });
       if (run.scored) {
@@ -1600,7 +1683,8 @@ export class Game {
   private applyAutodrive(): void {
     const p = this.physics;
     const ahead = p.position.z - 12;
-    const targetX = this.world.path.centerX(ahead) + this.autoOffset;
+    // Hold the left-hand lane (not the centre line, where the metro piers stand).
+    const targetX = this.world.spawnAt(ahead).x + this.autoOffset;
     const err = targetX - (p.position.x + p.forward.x * 12);
     // Cruise gently in attract mode so the scenery can be enjoyed.
     const cruise = this.attract ? p.speedKmh < 48 : true;

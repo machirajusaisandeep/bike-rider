@@ -125,6 +125,19 @@ export function unlockLabel(id: string): string {
   const [kind, val] = id.split(':');
   if (kind === 'weather') return `${val} weather`;
   if (kind === 'time') return `${val} riding`;
-  if (kind === 'bike') return 'a new bike';
+  if (kind === 'bike') {
+    const named: Record<string, string> = {
+      twin650: 'the Interceptor 650',
+      guerrilla450: 'the Guerrilla 450',
+      goan350: 'the Goan Classic 350',
+      gt650: 'the Continental GT 650',
+      shotgun650: 'the Shotgun 650',
+      supermeteor650: 'the Super Meteor 650',
+      classic650: 'the Classic 650',
+      bullet650: 'the Bullet 650',
+      bear650: 'the Bear 650',
+    };
+    return named[val ?? ''] ?? 'a new bike';
+  }
   return id;
 }

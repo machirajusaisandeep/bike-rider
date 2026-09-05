@@ -1,4 +1,8 @@
 import type { Profile, UpgradeKey } from '../core/profile';
+import { BIKES, bikeById, type BikeDef } from './bikes';
+
+export type { BikeDef, BikeChassis, BikeFamily, BikeCategory } from './bikes';
+export { BIKES, BIKE_BY_ID, bikeById, resolveBikeId, CATEGORY_LABEL, CATEGORY_ORDER } from './bikes';
 
 /**
  * Coins → bike tuning. Effects are multipliers applied to BikePhysics.tune, so the arcade feel
@@ -52,66 +56,6 @@ export const UPGRADES: UpgradeDef[] = [
 
 export const MAX_LEVEL = 5;
 
-export interface BikeDef {
-  id: string;
-  name: string;
-  blurb: string;
-  price: number;
-  /** Hex paint for the procedural bike's tank and body. */
-  paint: string;
-  accent: string;
-  /** Base tuning before upgrades. */
-  tune: { power: number; brakes: number; grip: number; offroad: number };
-  /** Unlock id required (from missions), if any. */
-  requires?: string;
-}
-
-/**
- * Original, non-licensed bikes. The stock bike keeps the White Flame look; the others are
- * generic archetypes so the public build never ships a manufacturer's trade dress.
- */
-export const BIKES: BikeDef[] = [
-  {
-    id: 'scram',
-    name: 'Scrambler 411',
-    blurb: 'The all-rounder you started on. Balanced, forgiving, happy on gravel.',
-    price: 0,
-    paint: '#f2f2f2',
-    accent: '#ff5a1f',
-    tune: { power: 1, brakes: 1, grip: 1, offroad: 1 },
-  },
-  {
-    id: 'classic350',
-    name: 'Retro 350',
-    blurb: 'Thump and chrome. Slower, but plants itself in corners.',
-    price: 1500,
-    paint: '#2a4d3a',
-    accent: '#d8b45a',
-    tune: { power: 0.88, brakes: 1.05, grip: 1.12, offroad: 0.85 },
-  },
-  {
-    id: 'adv450',
-    name: 'Adventure 450',
-    blurb: 'Long travel, big tank. Built for Ladakh.',
-    price: 3500,
-    paint: '#c9cfd6',
-    accent: '#1f6f8b',
-    tune: { power: 1.08, brakes: 1.05, grip: 1.0, offroad: 1.35 },
-  },
-  {
-    id: 'twin650',
-    name: 'Twin 650',
-    blurb: 'Two cylinders and a long wheelbase. The fastest thing here.',
-    price: 6000,
-    paint: '#1a1a1a',
-    accent: '#ffb428',
-    tune: { power: 1.3, brakes: 1.1, grip: 1.05, offroad: 0.8 },
-    requires: 'bike:twin650',
-  },
-];
-
-export const BIKE_BY_ID: Record<string, BikeDef> = Object.fromEntries(BIKES.map((b) => [b.id, b]));
-
 export function upgradeCost(def: UpgradeDef, currentLevel: number): number | null {
   return currentLevel >= MAX_LEVEL ? null : (def.costs[currentLevel] ?? null);
 }
@@ -123,7 +67,7 @@ export function tuneFor(p: Profile): {
   grip: number;
   offroad: number;
 } {
-  const bike = BIKE_BY_ID[p.bike] ?? BIKES[0]!;
+  const bike = bikeById(p.bike);
   const lvl = (k: UpgradeKey) => Math.max(0, Math.min(MAX_LEVEL, p.upgrades[k] ?? 0));
   const per = (k: UpgradeKey) => UPGRADES.find((u) => u.key === k)!.perLevel;
   return {
@@ -149,17 +93,19 @@ export function buyUpgrade(p: Profile, key: UpgradeKey): boolean {
   return true;
 }
 
-export function bikeState(p: Profile, b: BikeDef): 'owned' | 'locked' | 'buyable' | 'poor' {
-  if (p.bikes.includes(b.id)) return 'owned';
-  if (b.requires && !p.unlocks.includes(b.requires)) return 'locked';
-  return p.coins >= b.price ? 'buyable' : 'poor';
+export function bikeState(_p: Profile, _b: BikeDef): 'owned' | 'locked' | 'buyable' | 'poor' {
+  return 'owned';
+}
+
+/** Select a bike. Every catalog entry is available; no coins or missions required. */
+export function selectBike(p: Profile, id: string): boolean {
+  const b = BIKES.find((x) => x.id === id) ?? null;
+  if (!b) return false;
+  if (!p.bikes.includes(id)) p.bikes.push(id);
+  p.bike = id;
+  return true;
 }
 
 export function buyBike(p: Profile, id: string): boolean {
-  const b = BIKE_BY_ID[id];
-  if (!b || bikeState(p, b) !== 'buyable') return false;
-  p.coins -= b.price;
-  p.bikes.push(id);
-  p.bike = id;
-  return true;
+  return selectBike(p, id);
 }

@@ -7,3 +7,7 @@ dist
 # Royal Enfield model is fetched locally via `npm run fetch-model` and intentionally not
 # committed (see README "asset provenance"). Rider GLBs (CC0-derived) are committed.
 public/models/scram411.glb
+
+# Audit / smoke-test output (screenshots, probe json)
+audit-output
+test-results

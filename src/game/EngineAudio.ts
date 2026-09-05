@@ -9,6 +9,12 @@ export class EngineAudio {
   private gain: GainNode | null = null;
   private filter: BiquadFilterNode | null = null;
   private enabled = false;
+  /** Twin engines get a detuned second oscillator. */
+  private twin = false;
+
+  setEngine(kind: 'single' | 'twin'): void {
+    this.twin = kind === 'twin';
+  }
 
   setEnabled(on: boolean): void {
     this.enabled = on;
@@ -57,7 +63,7 @@ export class EngineAudio {
     const rpm = 1300 + rpm01 * 5200;
     const f = rpm / 60;
     this.osc.frequency.setTargetAtTime(f * 2, t, 0.04);
-    this.sub.frequency.setTargetAtTime(f, t, 0.04);
+    this.sub.frequency.setTargetAtTime(this.twin ? f * 1.01 : f, t, 0.04);
     this.filter.frequency.setTargetAtTime(350 + rpm01 * 1400 + throttle * 500, t, 0.05);
     const target = paused ? 0 : 0.035 + rpm01 * 0.05 + throttle * 0.03;
     this.gain.gain.setTargetAtTime(target, t, 0.08);

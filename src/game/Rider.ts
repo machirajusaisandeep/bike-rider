@@ -265,9 +265,10 @@ export class Rider {
     const elbow = cfg.gear.elbow ? GEAR_BY_ID[cfg.gear.elbow] : null;
     set('elbow', elbow?.color);
     set('helmet', helmet?.color, 0.3);
-    // shirt colour: white tee for men, light blue for women when no jacket
-    set('shirt', cfg.body === 'female' ? '#d8dfe8' : '#e8e3d6');
-    set('pants', '#2b3a5a');
+    // Shirt: off-white cotton for men, pale blue for women when no jacket. Real cotton sits at
+    // ~0.6 linear albedo; a near-1.0 "white" blew out and tripped bloom under the sun.
+    set('shirt', cfg.body === 'female' ? '#aebbca' : '#cfc8b8', 0.92);
+    set('pants', '#2b3a5a', 0.85);
   }
 }
 

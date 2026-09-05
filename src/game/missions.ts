@@ -192,7 +192,9 @@ export const MISSIONS: Mission[] = [
   M('munnar', 7, 3, 'clean', 2000, 'Not a scratch', '2 km without a single hit.', 600, {
     unlocks: 'weather:fog',
   }),
-  M('munnar', 8, 3, 'score', 8000, 'Estate legend', 'Score 8,000 in one run.', 900),
+  M('munnar', 8, 3, 'score', 8000, 'Estate legend', 'Score 8,000 in one run.', 900, {
+    unlocks: 'bike:shotgun650',
+  }),
   // ---- Ladakh
   M('ladakh', 1, 1, 'distance', 2000, 'Thin air', 'Ride 2 km of high desert.', 150),
   M('ladakh', 2, 1, 'topSpeed', 100, 'Open road', 'Hit 100 km/h on the plateau.', 200),
@@ -205,7 +207,9 @@ export const MISSIONS: Mission[] = [
   M('ladakh', 7, 3, 'deliver', 4, 'Supplies for Nubra', 'Deliver 4 parcels up the pass.', 650, {
     unlocks: 'weather:snow',
   }),
-  M('ladakh', 8, 3, 'score', 10000, 'Roof of the world', 'Score 10,000 in one run.', 1000),
+  M('ladakh', 8, 3, 'score', 10000, 'Roof of the world', 'Score 10,000 in one run.', 1000, {
+    unlocks: 'bike:supermeteor650',
+  }),
   // ---- Wayanad
   M('wayanad', 1, 1, 'distance', 1500, 'Into the ghat', 'Ride 1.5 km of rainforest road.', 150),
   M('wayanad', 2, 1, 'survive', 60, 'Monsoon minute', 'Survive 60 s of puddles and potholes.', 200),
@@ -224,8 +228,12 @@ export const MISSIONS: Mission[] = [
   M('wayanad', 6, 3, 'clean', 1800, 'Dry socks', '1.8 km without a hit.', 600, {
     unlocks: 'weather:rain',
   }),
-  M('wayanad', 7, 3, 'combo', 4, 'Hairpin heaven', 'Chain a ×4 combo.', 650),
-  M('wayanad', 8, 3, 'score', 8000, 'Ghat ghost', 'Score 8,000 in one run.', 900),
+  M('wayanad', 7, 3, 'combo', 4, 'Hairpin heaven', 'Chain a ×4 combo.', 650, {
+    unlocks: 'bike:bear650',
+  }),
+  M('wayanad', 8, 3, 'score', 8000, 'Ghat ghost', 'Score 8,000 in one run.', 900, {
+    unlocks: 'bike:classic650',
+  }),
   // ---- Ooty
   M('ooty', 1, 1, 'distance', 1500, 'Pine air', 'Ride 1.5 km of hill station road.', 150),
   M('ooty', 2, 1, 'nearMisses', 5, 'Cow country', 'Five near misses in one run.', 200),
@@ -234,9 +242,12 @@ export const MISSIONS: Mission[] = [
   M('ooty', 5, 2, 'clean', 1500, 'Breaker respect', '1.5 km with no hits.', 350),
   M('ooty', 6, 3, 'timeTrial', 2500, '36 hairpins', 'Cover 2.5 km in under 105 s.', 650, {
     limitS: 105,
+    unlocks: 'bike:bullet650',
   }),
   M('ooty', 7, 3, 'combo', 4, 'Bus weaver', 'Chain a ×4 combo.', 650),
-  M('ooty', 8, 3, 'score', 9000, 'Queen of hills', 'Score 9,000 in one run.', 900),
+  M('ooty', 8, 3, 'score', 9000, 'Queen of hills', 'Score 9,000 in one run.', 900, {
+    unlocks: 'bike:gt650',
+  }),
   // ---- Varkala
   M('varkala', 1, 1, 'distance', 1200, 'Cliff cruise', 'Ride 1.2 km along the cliff.', 150),
   M('varkala', 2, 1, 'noBrake', 500, 'Sea breeze', '500 m without braking.', 200),
@@ -247,14 +258,18 @@ export const MISSIONS: Mission[] = [
   M('varkala', 7, 3, 'timeTrial', 2000, 'Beat the tide', 'Cover 2 km in under 85 s.', 650, {
     limitS: 85,
   }),
-  M('varkala', 8, 3, 'score', 7500, 'Cliff king', 'Score 7,500 in one run.', 900),
+  M('varkala', 8, 3, 'score', 7500, 'Cliff king', 'Score 7,500 in one run.', 900, {
+    unlocks: 'bike:goan350',
+  }),
   // ---- Bengaluru
   M('bengaluru', 1, 1, 'distance', 1500, 'Ring road', 'Ride 1.5 km of city traffic.', 150),
   M('bengaluru', 2, 1, 'nearMisses', 8, 'Signal jumper', 'Eight near misses in one run.', 250),
   M('bengaluru', 3, 2, 'deliver', 3, 'Dabba delivery', 'Deliver 3 parcels across town.', 350),
   M('bengaluru', 4, 2, 'survive', 90, 'Peak hour', 'Survive 90 s at 6 pm.', 350),
   M('bengaluru', 5, 2, 'combo', 4, 'Lane splitter', 'Chain a ×4 combo.', 400),
-  M('bengaluru', 6, 3, 'clean', 1500, 'Pothole prophet', '1.5 km without a hit.', 600),
+  M('bengaluru', 6, 3, 'clean', 1500, 'Pothole prophet', '1.5 km without a hit.', 600, {
+    unlocks: 'bike:guerrilla450',
+  }),
   M('bengaluru', 7, 3, 'timeTrial', 3000, 'Airport run', 'Cover 3 km in under 125 s.', 700, {
     limitS: 125,
   }),

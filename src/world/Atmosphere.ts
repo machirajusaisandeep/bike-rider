@@ -140,7 +140,9 @@ export class Atmosphere {
     sm.color.copy(this.sunColor).multiplyScalar(this.isNight ? 0.5 : 1.4);
     this.sunSprite.visible = elevation > -6;
     this.sunSprite.scale.setScalar(this.isNight ? 140 : 150 + low * 90);
-    this.sun.intensity = this.isNight ? 0.6 : MathUtils.lerp(7.5, 4.5, low);
+    // Sun / sky / ambient ratio roughly follows daylight: direct sun ~4-5x the sky dome. The
+    // exposure below is raised to compensate so mid-tones stay put while highlights compress.
+    this.sun.intensity = this.isNight ? 0.6 : MathUtils.lerp(5.6, 3.8, low);
     if (this.isNight) this.sun.color.set(0x8fa6d6); // moonlight
     // The light comes from above the horizon even at "night" so shadows still make sense.
     const lightDir = this.sunDir.clone();
@@ -162,8 +164,8 @@ export class Atmosphere {
 
     this.hemi.color.copy(this.horizonColor).lerp(new Color(0xffffff), 0.3);
     this.hemi.groundColor.set(def.groundBounce);
-    this.hemi.intensity = this.isNight ? 0.35 : MathUtils.lerp(1.7, 1.2, low);
-    this.ambient.intensity = this.isNight ? 0.08 : 0.14;
+    this.hemi.intensity = this.isNight ? 0.35 : MathUtils.lerp(1.3, 1.0, low);
+    this.ambient.intensity = this.isNight ? 0.08 : 0.1;
 
     // The physical sky is bright: three's own sky demo runs at 0.5 exposure.
     this.baseSunIntensity = this.sun.intensity;
@@ -172,7 +174,7 @@ export class Atmosphere {
     const g = this.grey;
     this.grey = -1;
     this.setGrey(g);
-    exposureOut(def.exposure * 0.42 * (this.isNight ? 0.8 : 1));
+    exposureOut(def.exposure * 0.5 * (this.isNight ? 0.68 : 1));
     this.bakeEnvironment();
   }
 
@@ -205,7 +207,7 @@ export class Atmosphere {
     this.envTexture?.dispose();
     this.envTexture = this.pmrem.fromScene(this.envScene, 0, 1, 20000).texture;
     this.scene.environment = this.envTexture;
-    this.scene.environmentIntensity = this.isNight ? 0.35 : 1.0;
+    this.scene.environmentIntensity = this.isNight ? 0.35 : 0.72;
     skyForEnv.material.dispose();
     skyForEnv.geometry.dispose();
   }

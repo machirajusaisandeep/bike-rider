@@ -21,7 +21,7 @@ const en: Dict = {
   // menu
   'menu.rider.title': 'Create your <em>rider</em>',
   'menu.rider.sub': 'Face, hair and riding gear. What you wear is what protects you.',
-  'menu.scene.title': 'Ride India on a <em>Scram 411</em>',
+  'menu.scene.title': 'Ride India on <em>two wheels</em>',
   'menu.scene.sub':
     'Pick a road. Tea hills, Himalayan passes, rainforest ghats, a cliff above the sea or the city at dusk.',
   'menu.step.rider': '1 Rider',
@@ -114,7 +114,7 @@ const en: Dict = {
 const hi: Dict = {
   'menu.rider.title': 'अपना <em>राइडर</em> बनाएँ',
   'menu.rider.sub': 'चेहरा, बाल और राइडिंग गियर। जो पहनोगे, वही बचाएगा।',
-  'menu.scene.title': '<em>Scram 411</em> पर भारत घूमो',
+  'menu.scene.title': '<em>बाइक</em> पर भारत घूमो',
   'menu.scene.sub':
     'सड़क चुनो। चाय के पहाड़, हिमालय के दर्रे, घाट, समुद्र किनारे की चट्टान या शाम का शहर।',
   'menu.step.rider': '1 राइडर',
@@ -193,7 +193,7 @@ const hi: Dict = {
 const kn: Dict = {
   'menu.rider.title': 'ನಿಮ್ಮ <em>ರೈಡರ್</em> ರಚಿಸಿ',
   'menu.rider.sub': 'ಮುಖ, ಕೂದಲು ಮತ್ತು ರೈಡಿಂಗ್ ಗೇರ್. ಧರಿಸಿದ್ದೇ ರಕ್ಷಣೆ.',
-  'menu.scene.title': '<em>Scram 411</em>ನಲ್ಲಿ ಭಾರತ ಸುತ್ತಿ',
+  'menu.scene.title': '<em>ಬೈಕ್</em>‌ನಲ್ಲಿ ಭಾರತ ಸುತ್ತಿ',
   'menu.scene.sub':
     'ರಸ್ತೆ ಆರಿಸಿ. ಟೀ ಬೆಟ್ಟಗಳು, ಹಿಮಾಲಯದ ಪಾಸ್‌ಗಳು, ಘಾಟ್, ಸಮುದ್ರದ ಬಂಡೆ ಅಥವಾ ಸಂಜೆಯ ನಗರ.',
   'menu.step.rider': '1 ರೈಡರ್',
@@ -272,7 +272,7 @@ const kn: Dict = {
 const ta: Dict = {
   'menu.rider.title': 'உங்கள் <em>ரைடரை</em> உருவாக்குங்கள்',
   'menu.rider.sub': 'முகம், முடி, ரைடிங் கியர். அணிவதே பாதுகாப்பு.',
-  'menu.scene.title': '<em>Scram 411</em>-இல் இந்தியா சுற்றுங்கள்',
+  'menu.scene.title': '<em>பைக்</em>கில் இந்தியா சுற்றுங்கள்',
   'menu.scene.sub':
     'சாலையைத் தேர்வு செய்யுங்கள். தேயிலை மலைகள், இமயமலைப் பாதைகள், காட்டு மலைச்சாலை, கடல் பாறை அல்லது மாலை நகரம்.',
   'menu.step.rider': '1 ரைடர்',
@@ -351,7 +351,7 @@ const ta: Dict = {
 const ml: Dict = {
   'menu.rider.title': 'നിങ്ങളുടെ <em>റൈഡർ</em> ഉണ്ടാക്കൂ',
   'menu.rider.sub': 'മുഖം, മുടി, റൈഡിംഗ് ഗിയർ. ധരിക്കുന്നതാണ് സംരക്ഷണം.',
-  'menu.scene.title': '<em>Scram 411</em>-ൽ ഇന്ത്യ ചുറ്റൂ',
+  'menu.scene.title': '<em>ബൈക്കിൽ</em> ഇന്ത്യ ചുറ്റൂ',
   'menu.scene.sub':
     'റോഡ് തിരഞ്ഞെടുക്കൂ. തേയിലക്കുന്നുകൾ, ഹിമാലയൻ പാസ്, മഴക്കാട് ചുരം, കടൽത്തീര പാറ അല്ലെങ്കിൽ സന്ധ്യയിലെ നഗരം.',
   'menu.step.rider': '1 റൈഡർ',

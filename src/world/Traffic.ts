@@ -9,11 +9,11 @@ import {
 } from 'three';
 import { TRAFFIC } from '../core/config';
 import type { Quality } from '../core/settings';
-import { stdMat } from './geo';
+import { LAMPS, stdMat, vehicleMat } from './geo';
 import type { HeightField } from './heights';
 import { seededRandom } from './roadPath';
 import type { SceneDef } from './scenes';
-import { TRAFFIC_BY_SCENE, type TrafficDef } from './trafficDefs';
+import { METRO_PIER_Z, TRAFFIC_BY_SCENE, type TrafficDef } from './trafficDefs';
 import {
   buildHazard,
   buildVehicle,
@@ -61,6 +61,11 @@ interface Vehicle extends Obstacle {
   spec: VehicleSpec;
   dir: 1 | -1; // 1 = same way as the rider, -1 = oncoming
   laneLat: number;
+  /** Lane centre the vehicle is steering for (differs from laneLat during a lane change). */
+  laneTarget: number;
+  laneTimer: number;
+  /** Two-wheelers: temporary lateral target while squeezing past a slower vehicle. */
+  filterLat: number | null;
   cruise: number;
   wanderPhase: number;
   instance: number;
@@ -109,6 +114,8 @@ export class Traffic {
   private vehiclePools = new Map<VehicleKind, Pool>();
   private hazardPools = new Map<HazardKind, Pool>();
   private rnd: () => number;
+  /** Separate stream for in-flight behaviour so spawn order stays seed-stable. */
+  private behaviourRnd: () => number;
   private nextId = 1;
   private lastTile = NaN;
   private hazardTiles = new Set<number>();
@@ -118,7 +125,14 @@ export class Traffic {
   private density = 1;
   private qualityScale = 1;
   private lastBikeZ = 0;
+  /** Half width of the median obstruction vehicles must keep clear of (0 = none). */
+  private medianClear = 0;
   enabled = true;
+
+  /** Headlights / tail lights on every vehicle (dusk and night). */
+  setLamps(on: boolean): void {
+    LAMPS.value = on ? 1 : 0;
+  }
 
   constructor(
     private hf: HeightField,
@@ -129,22 +143,25 @@ export class Traffic {
   ) {
     this.def = TRAFFIC_BY_SCENE[scene.id];
     this.rnd = seededRandom(seed);
+    this.behaviourRnd = seededRandom(seed ^ 0xbeef);
     this.qualityScale = QUALITY_SCALE[quality];
     const w = scene.road.width;
     this.lanesPerDir = w >= 9 ? 2 : 1;
     const half = w / 2;
+    // Two lanes per side leave the median clear for the metro piers (0.95 m half width).
     const lanes = (sign: 1 | -1) =>
       this.lanesPerDir === 1
         ? [sign * half * TRAFFIC.laneFraction]
-        : [sign * half * 0.25, sign * half * 0.72];
+        : [sign * half * 0.36, sign * half * 0.76];
     this.laneLats = { same: lanes(-1), oncoming: lanes(1) };
+    this.medianClear = this.def.hazards.pier ? HAZARD_SPECS.pier.halfW + 0.15 : 0;
     this.setDensity(density);
 
     // Vehicle pools: capacity per kind sized to the whole target count so any mix fits.
     const paintRnd = seededRandom(seed ^ 0x51ed);
     for (const kind of Object.keys(this.def.vehicles) as VehicleKind[]) {
-      const geometry = buildVehicle(kind, paintRnd);
-      const material = stdMat({ roughness: 0.6, metalness: 0.15 });
+      const geometry = buildVehicle(kind, paintRnd, scene.id);
+      const material = vehicleMat();
       const cap = Math.max(4, Math.ceil(this.targetCount * 0.6));
       this.vehiclePools.set(kind, this.makePool(geometry, material, cap, true));
     }
@@ -220,25 +237,75 @@ export class Traffic {
     // --- move -----------------------------------------------------------------------------
     if (dt > 0) {
       const path = this.hf.path;
+      const canChange = this.def.laneChange > 0 && this.lanesPerDir === 2;
       for (const v of this.vehicles) {
-        // Car-following inside the lane.
+        // Car-following: find the nearest slower vehicle ahead in my (target) lane.
         let speed = v.cruise;
+        let blocker: Vehicle | null = null;
+        let blockGap = Infinity;
         for (const o of this.vehicles) {
-          if (o === v || o.dir !== v.dir || o.laneLat !== v.laneLat) continue;
+          if (o === v || o.dir !== v.dir) continue;
+          if (Math.abs(o.lat - v.laneTarget) > 1.4) continue;
           const gap = v.dir === 1 ? v.z - o.z : o.z - v.z; // positive when o is ahead of v
-          if (gap > 0 && gap < o.halfL + v.halfL + 6 + v.cruise * 1.2) {
-            speed = Math.min(speed, o.cruise * 0.98);
+          if (gap > 0 && gap < o.halfL + v.halfL + 6 + v.cruise * 1.2 && gap < blockGap) {
+            blocker = o;
+            blockGap = gap;
           }
         }
+        if (blocker) {
+          if (v.spec.twoWheeler && this.def.filter) {
+            // Two-wheelers do not queue: squeeze towards the centre line and past.
+            const centreward = v.laneTarget < 0 ? 1 : -1;
+            v.filterLat = blocker.lat + centreward * (blocker.halfW + v.halfW + 0.45);
+          } else {
+            speed = Math.min(speed, blocker.cruise * 0.98);
+            v.filterLat = null;
+            if (canChange && this.behaviourRnd() < dt * this.def.laneChange * 4)
+              this.tryLaneChange(v);
+          }
+        } else v.filterLat = null;
+        // Idle lane hopping (Bengaluru).
+        if (canChange) {
+          v.laneTimer -= dt;
+          if (v.laneTimer <= 0) {
+            v.laneTimer = 3 + this.behaviourRnd() * 8;
+            if (this.behaviourRnd() < this.def.laneChange * 5) this.tryLaneChange(v);
+          }
+        }
+        // Bends: everyone eases off, heavy vehicles brake harder and swing wide.
+        const curve = Math.abs(path.slope(v.z - 10) - path.slope(v.z + 10));
+        speed *= 1 - Math.min(0.45, curve * (v.spec.heavy ? 4.5 : 2.2));
         v.speed = speed * v.dir;
         v.z -= speed * dt * v.dir;
-        // Trucks and buses drift over the centre line now and then.
+        // Trucks and buses drift over the centre line now and then, more so through bends.
         v.wanderPhase += dt * 0.35;
-        const wander = Math.max(0, Math.sin(v.wanderPhase) - (1 - v.spec.wander)) * 1.6;
-        v.lat = v.laneLat + (v.dir === 1 ? wander : -wander);
+        const amp = 1.6 + (v.spec.heavy ? Math.min(2.5, curve * 14) : 0);
+        const wander = Math.max(0, Math.sin(v.wanderPhase) - (1 - v.spec.wander)) * amp;
+        let target = (v.filterLat ?? v.laneTarget) + (v.dir === 1 ? wander : -wander);
+        if (this.medianClear > 0) {
+          const minAbs = this.medianClear + v.halfW;
+          if (Math.abs(target) < minAbs) target = Math.sign(target || v.laneTarget) * minAbs;
+        }
+        const rate = (v.spec.twoWheeler ? 3.5 : 1.6) * dt;
+        v.lat += Math.max(-rate, Math.min(rate, target - v.lat));
         this.place(v, path.heading(v.z) + (v.dir === -1 ? Math.PI : 0));
       }
     }
+  }
+
+  /** Move to the other lane on my side if there is room there. */
+  private tryLaneChange(v: Vehicle): void {
+    const lanes = v.dir === 1 ? this.laneLats.same : this.laneLats.oncoming;
+    const other = lanes.find((l) => l !== v.laneTarget);
+    if (other === undefined) return;
+    const blocked = this.vehicles.some(
+      (o) =>
+        o !== v &&
+        o.dir === v.dir &&
+        Math.abs(o.lat - other) < 1.6 &&
+        Math.abs(o.z - v.z) < o.halfL + v.halfL + 12,
+    );
+    if (!blocked) v.laneTarget = other;
   }
 
   private spawn(bikeZ: number, bikeSpeed: number): boolean {
@@ -272,6 +339,9 @@ export class Traffic {
       spec,
       dir,
       laneLat,
+      laneTarget: laneLat,
+      laneTimer: 2 + this.rnd() * 8,
+      filterLat: null,
       lat: laneLat,
       z,
       halfW: spec.halfW,
@@ -338,21 +408,30 @@ export class Traffic {
     const half = this.scene.road.width / 2;
     const kmPerTile = TILE / 1000;
     for (const [kind, perKm] of Object.entries(this.def.hazards) as [HazardKind, number][]) {
+      const spec = HAZARD_SPECS[kind];
+      const median = spec.placement === 'median';
       const expected = perKm * kmPerTile * Math.max(0.4, this.density);
-      // Poisson-ish: at most 2 of a kind per tile.
+      // Poisson-ish: at most 2 of a kind per tile. Median piers are fixed: one per 20 m.
       let n = 0;
-      if (rnd() < expected) n++;
-      if (rnd() < expected * 0.35) n++;
+      if (median) n = METRO_PIER_Z.length;
+      else {
+        if (rnd() < expected) n++;
+        if (rnd() < expected * 0.35) n++;
+      }
       for (let i = 0; i < n; i++) {
         const pool = this.hazardPools.get(kind)!;
         if (pool.free.length === 0) break;
-        const spec = HAZARD_SPECS[kind];
-        const z = -k * TILE - rnd() * TILE;
+        const z = median ? -k * TILE - METRO_PIER_Z[i]! : -k * TILE - rnd() * TILE;
         let lat: number;
-        if (spec.placement === 'road') lat = 0;
+        if (spec.placement === 'road' || median) lat = 0;
         else if (spec.placement === 'edge')
           lat = (rnd() < 0.5 ? -1 : 1) * (half - spec.halfW - 0.1 + rnd() * 0.6);
-        else lat = (rnd() - 0.5) * 2 * (half - spec.halfW - 0.2);
+        else {
+          lat = (rnd() - 0.5) * 2 * (half - spec.halfW - 0.2);
+          // keep lane hazards out of the pier line in the median
+          if (this.medianClear > 0 && Math.abs(lat) < this.medianClear + spec.halfW)
+            lat = Math.sign(lat || 1) * (this.medianClear + spec.halfW + 0.3);
+        }
         const id = pool.free.pop()!;
         const h: Hazard = {
           id,
@@ -373,7 +452,7 @@ export class Traffic {
         this.hazards.push(h);
         const x = path.centerX(z) + lat;
         const yaw =
-          spec.placement === 'road'
+          spec.placement === 'road' || median
             ? path.heading(z)
             : kind === 'cow' || kind === 'goat'
               ? path.heading(z) + (rnd() - 0.5) * 1.6
@@ -420,7 +499,9 @@ export class Traffic {
       if (o.passed) return;
       if (bikeZ <= o.z) {
         o.passed = true;
-        if (o.effect !== 'solid') return;
+        // Fixed street furniture (metro piers) never counts as a near miss: it would hand out a
+        // free combo every 20 m to anyone holding the inner lane.
+        if (o.effect !== 'solid' || o.kind === 'pier') return;
         const gap = Math.abs(bikeLat - o.lat) - (o.halfW + TRAFFIC.bikeRadius);
         out.push({ obstacle: o, gap, oncoming });
       }

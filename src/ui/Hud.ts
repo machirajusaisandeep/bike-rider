@@ -19,6 +19,9 @@ export interface HudData {
   offRoute: boolean;
   distanceKm: number;
   fps: number;
+  /** Scene-pass draw calls / triangles for the perf chip (optional). */
+  drawCalls?: number;
+  triangles?: number;
   moving: boolean;
 }
 
@@ -100,6 +103,7 @@ export class Hud {
   private objectiveEl: HTMLElement;
   private lastScoreText = '';
   private perf = false;
+  private bikeNameEl!: HTMLElement;
 
   constructor(
     parent: HTMLElement,
@@ -114,7 +118,8 @@ export class Hud {
     // --- top-left: identity + route ------------------------------------------------
     const tl = el('div', 'hud-corner hud-tl');
     tl.appendChild(el('div', 'brand', '<span class="brand-dot"></span>BIKE RIDER'));
-    tl.appendChild(el('div', 'brand-sub', 'Scram 411 · White Flame'));
+    this.bikeNameEl = el('div', 'brand-sub', 'Scram 440');
+    tl.appendChild(this.bikeNameEl);
     const route = el('div', 'chip-row');
     this.distEl = el('span', 'chip', '0.0 km');
     this.surfaceEl = el('span', 'chip chip-surface', 'Asphalt');
@@ -133,6 +138,7 @@ export class Hud {
     this.cameraBtn.classList.add('btn-wide');
     this.pauseBtn = this.iconButton(ICONS.pause, 'Pause (P)', () => this.cb.onTogglePause());
     const resetBtn = this.iconButton(ICONS.reset, 'Reset bike (R)', () => this.cb.onReset());
+    resetBtn.classList.add('btn-desktop');
     this.soundBtn = this.iconButton(
       settings.sound ? ICONS.sound : ICONS.soundOff,
       'Engine sound',
@@ -143,11 +149,15 @@ export class Hud {
       },
     );
     const settingsBtn = this.iconButton(ICONS.settings, 'Settings', () => this.toggleSettings());
+    // Sound and settings are still meaningful while the menu / rider creator is up (quality,
+    // time of day and weather preview live behind it); every other button is ride-only.
+    this.soundBtn.classList.add('btn-menu-keep');
+    settingsBtn.classList.add('btn-menu-keep');
     const scenesBtn = this.iconButton(ICONS.scenes, 'Change scene (Esc)', () =>
       this.cb.onOpenScenes(),
     );
     scenesBtn.appendChild(el('span', 'btn-label', 'Scenes'));
-    scenesBtn.classList.add('btn-wide');
+    scenesBtn.classList.add('btn-wide', 'btn-desktop');
     tr.append(scenesBtn, this.cameraBtn, this.pauseBtn, resetBtn, this.soundBtn, settingsBtn);
     this.root.appendChild(tr);
 
@@ -509,6 +519,10 @@ export class Hud {
     this.fpsEl.hidden = !on;
   }
 
+  setBikeName(name: string): void {
+    this.bikeNameEl.textContent = name;
+  }
+
   /** Transient status line (model loading etc.). Pass null to hide. */
   setStatus(text: string | null): void {
     this.statusEl.hidden = !text;
@@ -568,7 +582,10 @@ export class Hud {
     const dist = `${d.distanceKm.toFixed(1)} km`;
     if (this.distEl.textContent !== dist) this.distEl.textContent = dist;
     if (this.perf) {
-      const fps = `${Math.round(d.fps)} fps`;
+      const fps =
+        d.drawCalls !== undefined
+          ? `${Math.round(d.fps)} fps · ${d.drawCalls} dc · ${Math.round((d.triangles ?? 0) / 1000)}k tri`
+          : `${Math.round(d.fps)} fps`;
       if (this.fpsEl.textContent !== fps) this.fpsEl.textContent = fps;
     }
     this.offRouteEl.hidden = !d.offRoute;

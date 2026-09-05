@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "fetch-model": "node scripts/fetch-model.mjs",
     "test:watch": "vitest",
-    "zip:itch": "node scripts/zip-itch.mjs"
+    "zip:itch": "node scripts/zip-itch.mjs",
+    "audit:smoke": "node audit/visual-smoke.mjs"
   },
   "keywords": [],
   "author": "",

@@ -204,17 +204,34 @@ export class Terrain {
         c0.lerp(this.cols.high, smoothstep(0.5, 0.95, band));
         const cliff = smoothstep(t.cliffSlope * 0.7, t.cliffSlope * 1.3, slope);
         c0.lerp(this.cols.cliff, cliff);
+        // micro variation: broad patches plus fine speckle so featureless slopes still read depth
+        const fine = fbm(x * 0.13, z * 0.13, { octaves: 2, seed: 7 }) * 0.5 + 0.5;
+        let v = (0.9 + n * 0.16) * (0.9 + fine * 0.2);
+        if (t.strata && cliff > 0.02) {
+          // sedimentary banding: light / dark layers following (slightly tilted) height contours
+          const band = 0.5 + 0.5 * Math.sin(h * 0.42 + x * 0.004 + n * 2.5);
+          v *= 1 + (band - 0.5) * 0.4 * cliff;
+        }
         if (t.snowLine !== undefined) {
           const snow = smoothstep(t.snowLine, t.snowLine + 60 + n * 40, h) * (1 - cliff * 0.7);
           c0.lerp(this.cols.snow, snow);
+          if (t.snowPatches) {
+            // old drifts in hollows on gentle slopes well below the snow line
+            const drift = fbm(x * 0.05, z * 0.05, { octaves: 3, seed: 21 }) * 0.5 + 0.5;
+            const patch =
+              smoothstep(0.6, 0.72, drift) *
+              smoothstep(t.snowLine - 140, t.snowLine - 50, h) *
+              (1 - smoothstep(0.3, 0.7, slope));
+            c0.lerp(this.cols.snow, patch * 0.9);
+          }
         }
         if (water) {
-          const sand = smoothstep(water.level + 10, water.level - 2, h);
+          // only flat ground turns to sand; the cliff face stays laterite red
+          const sand = smoothstep(water.level + 6, water.level + 1, h) * (1 - cliff);
           c0.lerp(this.cols.sand, sand);
+          // damp sand right at the water line
+          v *= 1 - smoothstep(water.level + 2.2, water.level + 1.2, h) * 0.18;
         }
-        // micro variation: broad patches plus fine speckle so featureless slopes still read depth
-        const fine = fbm(x * 0.13, z * 0.13, { octaves: 2, seed: 7 }) * 0.5 + 0.5;
-        const v = (0.9 + n * 0.16) * (0.9 + fine * 0.2);
         col.setXYZ(k, c0.r * v, c0.g * v, c0.b * v);
         k++;
       }
