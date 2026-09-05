@@ -130,7 +130,7 @@ export async function renderCard(d: CardData): Promise<Blob> {
   ];
   const tw = 196;
   const th = 96;
-  const ty = 462;
+  const ty = 440;
   tiles.forEach(([v, l], i) => {
     const x = 60 + i * (tw + 14);
     ctx.fillStyle = 'rgba(255,255,255,0.08)';
@@ -161,12 +161,14 @@ export async function renderCard(d: CardData): Promise<Blob> {
     ctx.font = font(700, 22);
     ctx.fillText(`🔥 ${d.streak}-day streak`, W - 60, 176);
   }
+  // Link (host + path only; the seed travels in the shared text).
+  const shown = d.shareUrl.replace(/^https?:\/\//, '').replace(/[?#].*$/, '');
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.font = font(500, 20);
-  ctx.fillText('Beat it →', W - 60, 380);
+  ctx.font = font(500, 18);
+  ctx.fillText('Beat it at', W - 60, H - 52);
   ctx.fillStyle = '#ffffff';
-  ctx.font = font(600, 22, true);
-  ctx.fillText(d.shareUrl.replace(/^https?:\/\//, ''), W - 60, 412);
+  ctx.font = font(600, 20, true);
+  ctx.fillText(shown, W - 60, H - 26);
   ctx.textAlign = 'left';
 
   return new Promise<Blob>((resolve, reject) =>
@@ -198,21 +200,29 @@ export async function shareCard(blob: Blob, text: string, url: string): Promise<
   } catch (e) {
     if ((e as Error).name === 'AbortError') return 'failed';
   }
+  const withTimeout = <T>(p: Promise<T>, ms: number) =>
+    Promise.race<T>([
+      p,
+      new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+    ]);
   try {
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          'image/png': blob,
-          'text/plain': new Blob([`${text} ${url}`], { type: 'text/plain' }),
-        }),
-      ]);
+      await withTimeout(
+        navigator.clipboard.write([
+          new ClipboardItem({
+            'image/png': blob,
+            'text/plain': new Blob([`${text} ${url}`], { type: 'text/plain' }),
+          }),
+        ]),
+        4000,
+      );
       return 'copied-image';
     }
   } catch {
     /* fall through */
   }
   try {
-    await navigator.clipboard?.writeText(`${text} ${url}`);
+    await withTimeout(navigator.clipboard!.writeText(`${text} ${url}`), 3000);
     return 'copied-link';
   } catch {
     /* fall through */

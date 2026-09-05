@@ -56,6 +56,8 @@ export class Road {
   private posts: InstancedMesh;
   private currentIndex = NaN;
   private signMats: MeshStandardMaterial[];
+  private dryRoughness: number;
+  private wet = false;
 
   constructor(
     private hf: HeightField,
@@ -66,9 +68,10 @@ export class Road {
       : def.road.dusty
         ? dustyAsphaltTexture()
         : asphaltTexture();
+    this.dryRoughness = def.id === 'wayanad' ? 0.55 : 0.9;
     this.asphaltMat = new MeshStandardMaterial({
       map: tex,
-      roughness: def.id === 'wayanad' ? 0.55 : 0.9,
+      roughness: this.dryRoughness,
       metalness: 0,
     });
     const shoulderTex = def.water ? sandTexture() : gravelTexture();
@@ -126,6 +129,16 @@ export class Road {
     sign.visible = false;
     this.group.add(sign);
     return { index: -1, slot, asphalt, shoulder, sign };
+  }
+
+  /** Rain: darker, glossier tarmac that mirrors the sky. */
+  setWet(on: boolean): void {
+    if (on === this.wet) return;
+    this.wet = on;
+    this.asphaltMat.roughness = on ? 0.38 : this.dryRoughness;
+    this.asphaltMat.metalness = on ? 0.04 : 0;
+    this.asphaltMat.color.setScalar(on ? 0.55 : 1);
+    this.shoulderMat.color.setScalar(on ? 0.7 : 1);
   }
 
   update(bikeZ: number): void {

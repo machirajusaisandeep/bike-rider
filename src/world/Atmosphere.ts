@@ -78,6 +78,20 @@ export class Atmosphere {
     this.setQuality(quality);
   }
 
+  /** Overcast look for rain/fog/snow: pull the sun down and cool the light. 0 = none. */
+  setGrey(amount: number): void {
+    const a = Math.max(0, Math.min(1, amount));
+    if (a === this.grey) return;
+    this.grey = a;
+    this.sun.intensity = this.baseSunIntensity * (1 - 0.55 * a);
+    this.hemi.intensity = this.baseHemiIntensity * (1 - 0.25 * a);
+    this.sun.color.copy(this.baseSunColor).lerp(new Color(0xbfc8d4), a * 0.8);
+  }
+  private grey = 0;
+  private baseSunIntensity = 1;
+  private baseHemiIntensity = 1;
+  private baseSunColor = new Color(0xffffff);
+
   setQuality(q: Quality): void {
     this.sun.castShadow = q !== 'low';
     const size = q === 'high' ? 2048 : 1024;
@@ -152,6 +166,12 @@ export class Atmosphere {
     this.ambient.intensity = this.isNight ? 0.08 : 0.14;
 
     // The physical sky is bright: three's own sky demo runs at 0.5 exposure.
+    this.baseSunIntensity = this.sun.intensity;
+    this.baseHemiIntensity = this.hemi.intensity;
+    this.baseSunColor.copy(this.sun.color);
+    const g = this.grey;
+    this.grey = -1;
+    this.setGrey(g);
     exposureOut(def.exposure * 0.42 * (this.isNight ? 0.8 : 1));
     this.bakeEnvironment();
   }

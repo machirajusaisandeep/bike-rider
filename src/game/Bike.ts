@@ -50,6 +50,7 @@ export class Bike {
   /** True once a licensed/external GLB replaced the procedural meshes. */
   external = false;
   private headlightMat: MeshStandardMaterial;
+  private mats!: Materials;
   private baseSteerQuat = new Quaternion();
   private tailMat: MeshStandardMaterial;
 
@@ -58,6 +59,7 @@ export class Bike {
     this.lean.add(this.steerPivot, this.rearWheel);
 
     const M = createMaterials();
+    this.mats = M;
     this.headlightMat = M.headlightGlass;
     this.tailMat = M.tailGlass;
 
@@ -457,6 +459,19 @@ export class Bike {
   spin(distance: number): void {
     this.frontWheel.rotation.x -= distance / BIKE.frontWheelRadius;
     this.rearWheel.rotation.x -= distance / BIKE.rearWheelRadius;
+  }
+
+  /**
+   * Repaint the procedural bike (garage bikes). Tank textures keep their flame graphic and are
+   * tinted by the paint colour; the external RE model is left untouched.
+   */
+  setPaint(paint: string, accent: string): void {
+    if (this.external) return;
+    const M = this.mats;
+    M.whitePaint.color.set(paint);
+    M.tankSide.color.set(paint);
+    M.tankTop.color.set(paint);
+    M.flameAccent.color.set(accent);
   }
 
   setLights(on: boolean, braking: boolean): void {

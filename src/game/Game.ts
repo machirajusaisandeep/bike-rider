@@ -18,7 +18,7 @@ import {
   WHITE_FLAME_RECOLOUR,
 } from '../core/config';
 import { Input, type InputState } from '../core/Input';
-import { loadProfile, recordRun, saveProfile as recordHandle, type Profile } from '../core/profile';
+import { loadProfile, recordRun, type Profile } from '../core/profile';
 import { dailyScene, dailySeed, parseSeed, randomSeed, todayKey, type Seed } from '../core/seed';
 import {
   autoQuality,
@@ -31,6 +31,19 @@ import { PostFX } from '../postfx/PostFX';
 import { Hud } from '../ui/Hud';
 import { Menu } from '../ui/Menu';
 import { Summary } from '../ui/Summary';
+import { MissionsPanel } from '../ui/Missions';
+import { GaragePanel } from '../ui/Garage';
+import { composePhoto, PhotoMode } from '../ui/PhotoMode';
+import {
+  evaluateMission,
+  MISSION_BY_ID,
+  PARCEL_INTERVAL_M,
+  type Mission,
+  type MissionLive,
+} from './missions';
+import { BIKE_BY_ID, tuneFor } from './upgrades';
+import { saveProfile } from '../core/profile';
+import type { WeatherId } from '../world/Weather';
 import { renderCard, shareCard } from '../share/Card';
 import { submitRun } from '../net/leaderboard';
 import { Dust } from '../world/Dust';
@@ -42,6 +55,7 @@ import { BikePhysics } from './BikePhysics';
 import { ChaseCamera } from './ChaseCamera';
 import { EngineAudio } from './EngineAudio';
 import { FACES, GEAR_BY_ID, HAIR, protectionFor, sanitizeRider, type RiderConfig } from './gear';
+import { GhostRecorder, GhostRider, loadGhost, saveGhost } from './Ghost';
 import { Health } from './Health';
 import { Rider } from './Rider';
 import { MODE_LABEL, Run, type GameMode } from './Run';
@@ -103,10 +117,21 @@ export class Game {
   private nearMisses: NearMiss[] = [];
   private goTimer = 0;
   private wetStep = false;
+  private ghostRec = new GhostRecorder();
+  private ghost: GhostRider | null = null;
   private crashLabel = '';
   private crashKmh = 0;
   /** Seed pinned from the URL for the first ride only. */
   private urlSeed: Seed | null = null;
+  private missionsPanel!: MissionsPanel;
+  private garage!: GaragePanel;
+  private photo!: PhotoMode;
+  private mission: Mission | null = null;
+  private live: MissionLive = freshLive();
+  private missionState: 'live' | 'done' | 'failed' = 'live';
+  private missionEvalT = 0;
+  private wasBraking = false;
+  private photoReturn: 'summary' | 'ride' | 'paused' | null = null;
 
   constructor(private container: HTMLElement) {
     const stored = localStorage.getItem('bike-rider.settings.v2');
@@ -185,6 +210,8 @@ export class Game {
     this.physics.heightAt = this.world.heightAt;
     this.chase.heightAt = this.world.heightAt;
     this.scene.add(this.bike.root);
+    this.ghost = new GhostRider();
+    this.scene.add(this.ghost.bike.root);
     this.seatRider();
     this.rider.onLoaded = () => this.hud.setStatus(null);
     this.applyRider(this.settings.rider, false);
@@ -198,6 +225,7 @@ export class Game {
       onSettingsChange: (s) => this.applySettings(s),
       onOpenScenes: () => this.openMenu(),
       onQuitRun: () => this.quitRun(),
+      onPhoto: () => this.openPhoto(),
     });
     this.hud.setPerf(this.params.has('perf') || import.meta.env.DEV);
     {
@@ -211,9 +239,40 @@ export class Game {
       onStepChange: (step) => this.onMenuStep(step),
       onFocus: (tab) => this.focusRider(tab),
       onModeChange: (mode) => track('mode_select', { mode }),
-      onOpenMissions: () => this.hud.setStatus('Missions arrive in the next update'),
-      onOpenGarage: () => this.hud.setStatus('Garage arrives in the next update'),
+      onOpenMissions: () => this.missionsPanel.show(this.menu.current),
+      onOpenGarage: () => this.garage.show(),
     });
+    this.missionsPanel = new MissionsPanel(container, this.settings.scene, () => this.profile, {
+      onStart: (m) => {
+        this.missionsPanel.hide();
+        this.launch('mission', m.scene, randomSeed(), m.id);
+      },
+      onClose: () => this.missionsPanel.hide(),
+    });
+    this.garage = new GaragePanel(container, () => this.profile, {
+      onChange: () => {
+        saveProfile(this.profile);
+        this.applyGarage();
+        this.refreshProgress();
+      },
+      onClose: () => this.garage.hide(),
+    });
+    this.photo = new PhotoMode(container, {
+      onClose: () => this.closePhoto(),
+      onCapture: () => void this.capturePhoto(),
+      onTimeOfDay: (t) => {
+        this.settings.timeOfDay = t;
+        saveSettings(this.settings);
+        this.hud.setSegment('timeOfDay', t);
+        this.world.setTimeOfDay(t);
+        this.applyLook();
+      },
+    });
+    this.applyGarage();
+    const weatherParam = this.params.get('weather');
+    if (weatherParam === 'rain' || weatherParam === 'fog' || weatherParam === 'snow')
+      this.settings.weather = weatherParam;
+    this.applyWeather(true);
     this.menu.setDaily(dailyScene(), this.profile.daily.streak);
     this.refreshProgress();
     this.menu.setMode(initialMode);
@@ -229,13 +288,14 @@ export class Game {
         this.summary.hide();
         this.startFreeRide();
       },
-      onPhoto: () => this.hud.setStatus('Photo mode arrives in the next update'),
+      onPhoto: () => this.openPhoto(),
     });
 
     this.input.on('KeyR', () => !this.attract && !this.summary.visible && this.reset(true));
     this.input.on('KeyC', () => !this.attract && this.cycleCamera());
     this.input.on('KeyP', () => !this.attract && !this.summary.visible && this.togglePause());
     this.input.on('Escape', () => {
+      if (this.photo.visible || this.missionsPanel.visible || this.garage.visible) return;
       if (this.attract || this.summary.visible) return;
       if (this.run.scored && this.run.phase !== 'idle') this.togglePause();
       else this.openMenu();
@@ -448,6 +508,7 @@ export class Game {
     this.settings.scene = id;
     saveSettings(this.settings);
     this.world.load(id, this.settings.timeOfDay);
+    this.world.setWeather(this.world.weatherId);
     this.applyLook();
     this.dust.setColor(this.world.dustColor);
     this.reset();
@@ -466,6 +527,10 @@ export class Game {
       seed = this.urlSeed ?? randomSeed();
       this.urlSeed = null;
     }
+    this.launch(mode, scene, seed);
+  }
+
+  private launch(mode: GameMode, scene: SceneId, seed: Seed, missionId?: string): void {
     this.switchScene(scene);
     this.menu.hide();
     this.summary.hide();
@@ -476,11 +541,13 @@ export class Game {
     this.chase.setCloseUp(false);
     this.chase.setMode(this.savedCamera);
     this.hud.setCameraMode(this.savedCamera);
-    this.beginRun({ mode, scene, seed });
+    this.beginRun({ mode, scene, seed, missionId });
     this.clock.getDelta();
   }
 
-  private beginRun(cfg: { mode: GameMode; scene: SceneId; seed: Seed }): void {
+  private beginRun(cfg: { mode: GameMode; scene: SceneId; seed: Seed; missionId?: string }): void {
+    // Every run starts at the head of the road so seeds, ghosts and boards line up.
+    this.physics.position.set(0, 0, 0);
     this.reset();
     this.scoring.reset();
     this.health.reset();
@@ -496,6 +563,18 @@ export class Game {
     } else {
       this.world.setTraffic(null);
     }
+    this.ghostRec.reset();
+    if (scored) {
+      const g = loadGhost(this.boardKey(cfg.mode, cfg.scene));
+      this.ghost?.load(g?.data ?? null);
+    } else this.ghost?.load(null);
+    this.mission = cfg.missionId ? (MISSION_BY_ID[cfg.missionId] ?? null) : null;
+    this.live = freshLive();
+    this.missionState = 'live';
+    this.missionEvalT = 0;
+    this.wasBraking = false;
+    if (this.mission) this.hud.setObjective(this.mission.title, this.mission.desc, 0, 'live');
+    else this.hud.setObjective(null);
     this.hud.setRun(scored, MODE_LABEL[cfg.mode]);
     this.hud.setHint(
       scored
@@ -511,7 +590,7 @@ export class Game {
     const c = this.run.config;
     const seed = c.mode === 'daily' ? c.seed : randomSeed();
     track('retry', { mode: c.mode, scene: c.scene });
-    this.beginRun({ mode: c.mode, scene: c.scene, seed });
+    this.beginRun({ mode: c.mode, scene: c.scene, seed, missionId: c.missionId });
     this.clock.getDelta();
   }
 
@@ -532,16 +611,38 @@ export class Game {
     if (phase === 'summary') this.showSummary();
   }
 
+  private boardKey(mode: GameMode, scene: SceneId): string {
+    return mode === 'daily' ? `daily:${todayKey()}` : `ride:${scene}`;
+  }
+
   private showSummary(): void {
     const s = this.run.stats;
     const c = this.run.config;
     if (c.mode === 'free') return;
+    this.ghost?.hide();
     this.hud.setCountdown(null);
     const score = this.scoring.rounded;
     const prev =
       c.mode === 'daily'
         ? (this.profile.daily.best[todayKey()]?.score ?? null)
         : (this.profile.bests[c.scene]?.score ?? null);
+    let missionLine: { title: string; done: boolean; reward: number } | null = null;
+    if (this.mission) {
+      const r = evaluateMission(this.mission, s, this.live);
+      const already = this.profile.missionsDone.includes(this.mission.id);
+      missionLine = {
+        title: this.mission.title,
+        done: r.done,
+        reward: already ? 0 : this.mission.reward,
+      };
+      if (r.done && !already) {
+        this.profile.missionsDone.push(this.mission.id);
+        this.profile.coins += this.mission.reward;
+        if (this.mission.unlocks && !this.profile.unlocks.includes(this.mission.unlocks))
+          this.profile.unlocks.push(this.mission.unlocks);
+        track('mission_complete', { id: this.mission.id });
+      }
+    }
     const { newBest, coins } = recordRun(this.profile, {
       mode: c.mode,
       scene: c.scene,
@@ -553,12 +654,15 @@ export class Game {
       nearMisses: s.nearMisses,
       bestCombo: s.bestCombo,
     });
+    if (newBest) saveGhost(this.boardKey(c.mode, c.scene), score, c.seed, this.ghostRec);
     const cause =
       s.cause === 'crash'
         ? `Crashed into a ${this.crashLabel.toLowerCase()}`
         : s.cause === 'lost'
           ? 'Off the road'
-          : 'Run ended';
+          : s.cause === 'complete'
+            ? 'Mission complete!'
+            : 'Run ended';
     const detail =
       s.cause === 'crash'
         ? `${Math.round(this.crashKmh)} km/h impact · protection ${this.protection}/100`
@@ -566,7 +670,9 @@ export class Game {
           ? this.world.def.water
             ? 'Into the sea. Stay on the tarmac.'
             : 'Down the hillside. Stay on the tarmac.'
-          : 'You ended the run from the pause menu.';
+          : s.cause === 'complete'
+            ? `${this.mission?.title ?? 'Objective'} done. Coins banked.`
+            : 'You ended the run from the pause menu.';
     this.summary.show({
       mode: c.mode,
       sceneName: SCENE_BY_ID[c.scene].name,
@@ -578,7 +684,9 @@ export class Game {
       cause,
       causeDetail: detail,
       streak: c.mode === 'daily' ? this.profile.daily.streak : undefined,
+      mission: missionLine,
     });
+    this.hud.setObjective(null);
     this.refreshProgress();
     if (s.cause !== 'quit' || s.distanceM > 200) this.submitToBoard(score);
     track('run_end', {
@@ -636,7 +744,7 @@ export class Game {
       }
       this.summary.setBoard({ ...board, handle: this.profile.handle }, (h) => {
         this.profile.handle = h;
-        recordHandle(this.profile);
+        saveProfile(this.profile);
       });
       track('leaderboard_submit', { source: board.source, rank: board.rank });
     });
@@ -682,6 +790,141 @@ export class Game {
       .catch(() => this.summary.setShareState('Share failed'));
   }
 
+  // ------------------------------------------------------------------ missions -------------
+  private updateMission(dt: number, step: number, braking: boolean): void {
+    const m = this.mission!;
+    const run = this.run;
+    if (braking && !this.wasBraking) {
+      this.live.brakeTaps++;
+      this.live.noBrakeM = 0;
+    }
+    this.wasBraking = braking;
+    if (!braking) this.live.noBrakeM += step;
+    this.live.cleanM += step;
+    this.live.score = this.scoring.score;
+    const parcels = Math.floor(run.stats.distanceM / PARCEL_INTERVAL_M);
+    if (m.type === 'deliver' && parcels > this.live.parcels) {
+      this.live.parcels = parcels;
+      this.hud.popBonus(`Parcel ${Math.min(parcels, m.target)}/${m.target} delivered`, 0, 'corner');
+    } else this.live.parcels = parcels;
+    this.missionEvalT += dt;
+    if (this.missionEvalT < 0.25 && this.missionState === 'live') return;
+    this.missionEvalT = 0;
+    if (this.missionState !== 'live') return;
+    const r = evaluateMission(m, run.stats, this.live);
+    if (r.done) {
+      this.missionState = 'done';
+      this.hud.setObjective(m.title, 'Complete!', 1, 'done');
+      this.hud.popBonus(`Mission complete · +${m.reward} coins`, 0, 'corner');
+      // Let the moment land, then wrap the run up.
+      setTimeout(() => {
+        if (this.run.active && this.mission === m) {
+          this.run.stats.cause = 'complete';
+          this.run.finish();
+        }
+      }, 1800);
+    } else if (r.failed) {
+      this.missionState = 'failed';
+      this.hud.setObjective(m.title, 'Out of time', r.progress, 'failed');
+    } else this.hud.setObjective(m.title, r.label, r.progress, 'live');
+  }
+
+  // ------------------------------------------------------------------ garage / weather -----
+  private applyGarage(): void {
+    this.physics.tune = tuneFor(this.profile);
+    const bike = BIKE_BY_ID[this.profile.bike] ?? BIKE_BY_ID['scram']!;
+    this.bike.setPaint(bike.paint, bike.accent);
+  }
+
+  /** Applies settings.weather if unlocked; otherwise snaps the setting back to clear. */
+  private applyWeather(initial: boolean): void {
+    const want: WeatherId = this.settings.weather;
+    const unlocked =
+      want === 'clear' ||
+      import.meta.env.DEV ||
+      this.params.has('weather') ||
+      this.profile.unlocks.includes(`weather:${want}`);
+    if (!unlocked) {
+      const hint: Record<string, string> = {
+        rain: 'Monsoon unlocks with the Wayanad mission "Dry socks"',
+        fog: 'Ghat fog unlocks with the Munnar mission "Not a scratch"',
+        snow: 'Snow unlocks with the Ladakh mission "Supplies for Nubra"',
+      };
+      this.hud.setStatus(hint[want] ?? 'Locked');
+      setTimeout(() => this.hud.setStatus(null), 3500);
+      this.settings.weather = 'clear';
+      this.hud.setSegment('weather', 'clear');
+      saveSettings(this.settings);
+    }
+    if (this.world.weatherId !== this.settings.weather || initial) {
+      this.world.setWeather(this.settings.weather);
+      this.applyLook();
+    }
+  }
+
+  // ------------------------------------------------------------------ photo mode -----------
+  private openPhoto(): void {
+    if (this.attract || this.photo.visible) return;
+    this.photoReturn = this.summary.visible ? 'summary' : this.paused ? 'paused' : 'ride';
+    this.summary.hide();
+    this.paused = true;
+    this.hud.setPaused(false);
+    this.hud.root.classList.add('photo-open');
+    this.photo.yaw = this.physics.heading + 0.7;
+    this.photo.show(this.settings.timeOfDay);
+    track('photo', { open: true });
+  }
+
+  private closePhoto(): void {
+    if (!this.photo.visible) return;
+    this.photo.hide();
+    this.hud.root.classList.remove('photo-open');
+    this.chase.resetSmoothing();
+    this.camera.fov = 58;
+    this.camera.updateProjectionMatrix();
+    if (this.photoReturn === 'summary') {
+      this.paused = false;
+      this.summary.root.hidden = false;
+      this.summary.root.classList.add('open');
+    } else if (this.photoReturn === 'paused') {
+      this.hud.setPaused(true);
+    } else {
+      this.paused = false;
+      this.clock.getDelta();
+    }
+    this.photoReturn = null;
+  }
+
+  private async capturePhoto(): Promise<void> {
+    // Render this exact frame, then read the canvas back before the next clear.
+    this.photo.applyCamera(this.camera, this.bike.root.position, this.world.heightAt);
+    if (this.post) this.post.render(0);
+    else this.renderer.render(this.scene, this.camera);
+    const def = this.world.def;
+    const sub =
+      this.run.scored && this.scoring.rounded > 0
+        ? `${this.scoring.rounded.toLocaleString('en-IN')} pts · ${def.place}`
+        : def.place;
+    try {
+      const blob = await composePhoto(this.renderer.domElement, def.name, sub);
+      const outcome = await shareCard(blob, `Riding ${def.name} in Bike Rider`, this.shareUrl());
+      this.hud.setStatus(
+        outcome === 'shared'
+          ? 'Photo shared'
+          : outcome === 'copied-image'
+            ? 'Photo copied to clipboard'
+            : outcome === 'downloaded'
+              ? 'Photo saved'
+              : 'Photo link copied',
+      );
+      setTimeout(() => this.hud.setStatus(null), 2500);
+      track('photo', { outcome });
+    } catch {
+      this.hud.setStatus('Could not capture photo');
+      setTimeout(() => this.hud.setStatus(null), 2500);
+    }
+  }
+
   // ------------------------------------------------------------------ collisions -----------
   private handleContacts(): void {
     const traffic = this.world.traffic;
@@ -710,6 +953,7 @@ export class Game {
           this.chase.kick(0.55);
           const r = this.health.hit(22, this.protection);
           if (r && !r.wobble) {
+            this.live.cleanM = 0;
             this.hud.popBonus('Pothole', -Math.round(r.damage * 100), 'hit');
             if (r.fatal) this.fatal(o.label, 22, c.side);
           }
@@ -734,6 +978,7 @@ export class Game {
         this.fatal(o.label, c.relativeKmh, c.side);
         continue;
       }
+      this.live.cleanM = 0;
       p.impulse(c.side, 0.45 + r.damage);
       this.chase.kick(0.6 + r.damage);
       this.hud.flashHit();
@@ -748,6 +993,7 @@ export class Game {
       const bonus = this.scoring.nearMiss(p.speedKmh * (nm.oncoming ? 1.5 : 1));
       this.run.stats.nearMisses++;
       this.run.stats.bestCombo = Math.max(this.run.stats.bestCombo, this.scoring.combo);
+      this.live.currentCombo = this.scoring.combo;
       this.hud.popBonus(
         nm.oncoming ? `${bonus.label} · oncoming!` : bonus.label,
         bonus.points,
@@ -847,6 +1093,7 @@ export class Game {
     if (!initial) this.savedCamera = s.cameraMode;
     this.audio.setEnabled(s.sound);
     this.dust.setColor(this.world.dustColor);
+    if (!initial) this.applyWeather(false);
     if (!initial) track('settings_change', { quality: s.quality, time: s.timeOfDay });
   }
 
@@ -898,6 +1145,10 @@ export class Game {
 
     if (!this.paused) this.step(dt);
     else this.audio.update(0.1, 0, true);
+    if (this.photo.visible) {
+      this.photo.applyCamera(this.camera, this.bike.root.position, this.world.heightAt);
+      this.world.update(0, this.physics.position, this.camera.position, 0, this.physics.forward);
+    }
 
     if (this.post) this.post.render(dt);
     else this.renderer.render(this.scene, this.camera);
@@ -924,6 +1175,7 @@ export class Game {
     while (this.accumulator >= FIXED_DT) {
       const p = this.physics;
       p.surface = this.wetStep ? 'wet' : this.world.surfaceAt(p.position.x, p.position.z);
+      if (p.surface === 'asphalt' && this.world.roadIsWet) p.surface = 'wet';
       this.wetStep = false;
       p.update(FIXED_DT, drive);
       const step = Math.abs(p.frameDistance);
@@ -933,6 +1185,8 @@ export class Game {
         const braking = drive.brake > 0 || drive.handbrake;
         run.stats.distanceM += step;
         run.stats.topKmh = Math.max(run.stats.topKmh, p.speedKmh);
+        this.ghostRec.sample(run.stats.durationS, p);
+        if (this.mission) this.updateMission(FIXED_DT, step, braking);
         this.health.tick(FIXED_DT);
         const bonus = this.scoring.update(
           FIXED_DT,
@@ -957,12 +1211,13 @@ export class Game {
     }
     if (run.phase === 'crashed' && run.sinceCrash >= CRASH_HOLD_S) run.finish();
     this.syncBikeTransform();
+    if (run.active || run.phase === 'countdown') this.ghost?.update(run.stats.durationS);
 
     const gravelly = p.surface !== 'asphalt' && p.surface !== 'wet' ? 1 : 0;
     const roughness =
       gravelly * Math.min(1, p.speedRatio * 2.5) + (1 - p.speedRatio) * 0.08 * p.rpm;
     this.chase.update(simDt, p, roughness, this.elapsed);
-    this.world.update(simDt, p.position, this.camera.position, p.speed);
+    this.world.update(simDt, p.position, this.camera.position, p.speed, p.forward);
 
     _back.copy(p.forward).multiplyScalar(-1);
     _rearContact.copy(p.position).addScaledVector(_back, 0.73);
@@ -1073,8 +1328,15 @@ export class Game {
     this.audio.dispose();
     this.menu.dispose();
     this.summary.dispose();
+    this.missionsPanel.dispose();
+    this.garage.dispose();
+    this.photo.dispose();
     this.post?.dispose();
     this.world.dispose();
     this.renderer.dispose();
   }
+}
+
+function freshLive(): MissionLive {
+  return { score: 0, brakeTaps: 0, noBrakeM: 0, cleanM: 0, parcels: 0, currentCombo: 0 };
 }

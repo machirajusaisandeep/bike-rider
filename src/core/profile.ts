@@ -137,7 +137,8 @@ export function recordRun(p: Profile, r: RunRecord): { newBest: boolean; coins: 
 
 function isYesterday(prevKey: number, todayKey: number): boolean {
   if (!prevKey) return false;
-  const d = (k: number) => new Date(Math.floor(k / 10000), Math.floor((k % 10000) / 100) - 1, k % 100);
+  const d = (k: number) =>
+    new Date(Math.floor(k / 10000), Math.floor((k % 10000) / 100) - 1, k % 100);
   const diff = (d(todayKey).getTime() - d(prevKey).getTime()) / 86400000;
   return Math.round(diff) === 1;
 }

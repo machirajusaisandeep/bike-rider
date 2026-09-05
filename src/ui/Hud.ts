@@ -28,6 +28,7 @@ export interface HudCallbacks {
   onSettingsChange: (s: Settings) => void;
   onOpenScenes: () => void;
   onQuitRun: () => void;
+  onPhoto: () => void;
 }
 
 const ICONS = {
@@ -95,6 +96,7 @@ export class Hud {
   private countdownEl: HTMLElement;
   private bonusWrap: HTMLElement;
   private runCluster: HTMLElement;
+  private objectiveEl: HTMLElement;
   private lastScoreText = '';
   private perf = false;
 
@@ -168,6 +170,9 @@ export class Hud {
     tc.appendChild(this.runCluster);
     this.root.appendChild(tc);
 
+    this.objectiveEl = el('div', 'objective');
+    this.objectiveEl.hidden = true;
+    tc.appendChild(this.objectiveEl);
     this.countdownEl = el('div', 'countdown');
     this.countdownEl.hidden = true;
     this.root.appendChild(this.countdownEl);
@@ -235,6 +240,7 @@ export class Hud {
         <p>Take a breather. Your bike is right where you left it.</p>
         <button class="btn-primary" data-action="resume">Resume</button>
         <button class="btn-ghost" data-action="reset">Reset bike</button>
+        <button class="btn-ghost" data-action="photo">Photo mode</button>
         <button class="btn-ghost" data-action="quit">End run · change road</button>
       </div>`;
     this.pauseOverlay.addEventListener('click', (e) => {
@@ -246,6 +252,7 @@ export class Hud {
         this.cb.onTogglePause();
       }
       if (t.dataset.action === 'quit') this.cb.onQuitRun();
+      if (t.dataset.action === 'photo') this.cb.onPhoto();
     });
     this.root.appendChild(this.pauseOverlay);
 
@@ -320,6 +327,23 @@ export class Hud {
         { v: 'day', l: 'Noon' },
         { v: 'golden', l: 'Golden' },
         { v: 'night', l: 'Night' },
+      ]),
+    );
+    panel.appendChild(
+      segmented<Settings['weather']>('Weather', 'weather', [
+        { v: 'clear', l: 'Clear' },
+        { v: 'rain', l: 'Monsoon' },
+        { v: 'fog', l: 'Fog' },
+        { v: 'snow', l: 'Snow' },
+      ]),
+    );
+    panel.appendChild(
+      segmented<Settings['language']>('Language', 'language', [
+        { v: 'en', l: 'EN' },
+        { v: 'hi', l: 'हि' },
+        { v: 'kn', l: 'ಕ' },
+        { v: 'ta', l: 'த' },
+        { v: 'ml', l: 'മ' },
       ]),
     );
     panel.appendChild(
@@ -429,6 +453,19 @@ export class Hud {
     this.healthWrap.dataset.level = hp > 0.6 ? 'high' : hp > 0.3 ? 'mid' : 'low';
   }
 
+  /** Mission objective line under the score. Pass null to hide. */
+  setObjective(
+    title: string | null,
+    progressLabel = '',
+    progress = 0,
+    state: 'live' | 'done' | 'failed' = 'live',
+  ): void {
+    this.objectiveEl.hidden = !title;
+    if (!title) return;
+    this.objectiveEl.innerHTML = `<span class="obj-title">${title}</span><span class="obj-prog">${progressLabel}</span><i style="width:${Math.round(progress * 100)}%"></i>`;
+    this.objectiveEl.dataset.state = state;
+  }
+
   /** Big centre text for the countdown / GO. Pass null to hide. */
   setCountdown(text: string | null): void {
     this.countdownEl.hidden = !text;
@@ -463,6 +500,14 @@ export class Hud {
     this.root.classList.remove('hit-flash');
     void this.root.offsetWidth;
     this.root.classList.add('hit-flash');
+  }
+
+  /** Reflect a settings value in the sheet (e.g. after the game rejects a locked option). */
+  setSegment(key: keyof Settings, value: string): void {
+    (this.settings as unknown as Record<string, unknown>)[key] = value;
+    this.settingsPanel
+      .querySelectorAll<HTMLElement>(`.seg[data-key="${key}"] .seg-btn`)
+      .forEach((b) => b.classList.toggle('active', b.dataset.value === value));
   }
 
   setPerf(on: boolean): void {

@@ -5,6 +5,7 @@ export type Quality = 'low' | 'medium' | 'high';
 export type TimeOfDay = 'auto' | 'day' | 'golden' | 'night';
 export type Units = 'kmh' | 'mph';
 export type CameraMode = 'chase' | 'cockpit' | 'cinematic';
+export type WeatherSetting = 'clear' | 'rain' | 'fog' | 'snow';
 
 export interface Settings {
   scene: SceneId;
@@ -15,6 +16,8 @@ export interface Settings {
   touchControls: 'auto' | 'on' | 'off';
   sound: boolean;
   cameraMode: CameraMode;
+  weather: WeatherSetting;
+  language: 'en' | 'hi' | 'kn' | 'ta' | 'ml';
 }
 
 const KEY = 'bike-rider.settings.v2';
@@ -28,6 +31,8 @@ export const DEFAULT_SETTINGS: Settings = {
   touchControls: 'auto',
   sound: false,
   cameraMode: 'chase',
+  weather: 'clear',
+  language: 'en',
 };
 
 export function loadSettings(): Settings {
@@ -38,6 +43,8 @@ export function loadSettings(): Settings {
     if (!isSceneId(s.scene)) s.scene = DEFAULT_SCENE;
     s.rider = sanitizeRider(s.rider);
     if (!['auto', 'day', 'golden', 'night'].includes(s.timeOfDay)) s.timeOfDay = 'auto';
+    if (!['clear', 'rain', 'fog', 'snow'].includes(s.weather)) s.weather = 'clear';
+    if (!['en', 'hi', 'kn', 'ta', 'ml'].includes(s.language)) s.language = 'en';
     return s;
   } catch {
     return { ...DEFAULT_SETTINGS };

@@ -330,9 +330,11 @@ export class Menu {
     this.modeSeg = this.scenePanel.querySelector<HTMLElement>('.mode-seg')!;
     this.modeNote = this.scenePanel.querySelector<HTMLElement>('.mode-note')!;
     this.coinsEl = this.scenePanel.querySelector<HTMLElement>('.coins-num')!;
-    this.modeSeg.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
-      b.addEventListener('click', () => this.setMode(b.dataset.mode as GameMode, true)),
-    );
+    this.modeSeg
+      .querySelectorAll<HTMLButtonElement>('[data-mode]')
+      .forEach((b) =>
+        b.addEventListener('click', () => this.setMode(b.dataset.mode as GameMode, true)),
+      );
     this.scenePanel
       .querySelector<HTMLButtonElement>('.btn-missions')!
       .addEventListener('click', () => this.cb.onOpenMissions());

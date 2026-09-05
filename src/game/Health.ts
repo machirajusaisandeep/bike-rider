@@ -26,7 +26,7 @@ export function damageFor(relativeKmh: number, protection: number): number {
     1.5,
   );
   const raw = t * t * 0.6 + t * 0.4; // gentle at low speed, steep at high speed
-  const mitigation = HEALTH.gearMitigation * clamp(protection, 0, 100) / 100;
+  const mitigation = (HEALTH.gearMitigation * clamp(protection, 0, 100)) / 100;
   return clamp(raw * (1 - mitigation), 0, 1.5);
 }
 

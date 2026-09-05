@@ -10,7 +10,10 @@ import { RoadPath } from './roadPath';
 import { SCENE_BY_ID, type SceneDef, type SceneId } from './scenes';
 import { Terrain } from './Terrain';
 import { Traffic } from './Traffic';
+import { Weather, type WeatherId } from './Weather';
 import { Vegetation } from './Vegetation';
+
+const _fwd = new Vector3(0, 0, -1);
 
 /**
  * Owns everything that is "the place": atmosphere, terrain, road, vegetation, water, city.
@@ -27,6 +30,7 @@ export class World {
   private ocean: Ocean | null = null;
   private city: City | null = null;
   traffic: Traffic | null = null;
+  readonly weather: Weather;
   private quality: Quality;
   private time: TimeOfDay = 'auto';
   private _exposure = 1;
@@ -38,6 +42,7 @@ export class World {
   ) {
     this.quality = quality;
     this.atmosphere = new Atmosphere(scene, renderer, quality);
+    this.weather = new Weather(scene);
   }
 
   get exposure(): number {
@@ -66,6 +71,7 @@ export class World {
       this.scene.add(this.city.group);
     }
     this.setTimeOfDay(time);
+    this.road.setWet(this.weather.params.wetRoad);
   }
 
   /** (Re)creates traffic for a run. Pass `null` density to remove traffic (free ride). */
@@ -82,6 +88,30 @@ export class World {
     this.atmosphere.apply(this.def, t, (e) => (this._exposure = e));
     this.city?.setNight(this.atmosphere.isNight, this.atmosphere.isDusk);
     this.scene.background = null; // the sky mesh is the background
+    this.applyWeatherParams();
+  }
+
+  setWeather(id: WeatherId): void {
+    this.weather.set(id);
+    this.applyWeatherParams();
+  }
+
+  get weatherId(): WeatherId {
+    return this.weather.id;
+  }
+
+  /** Rain makes every tarmac contact 'wet'. */
+  get roadIsWet(): boolean {
+    return this.weather.params.wetRoad;
+  }
+
+  private applyWeatherParams(): void {
+    const w = this.weather.params;
+    const fog = this.scene.fog as { density?: number } | null;
+    if (fog && 'density' in fog) fog.density = this.atmosphere.fogDensity * w.fogMult;
+    this._exposure *= w.exposureMult;
+    this.road?.setWet(w.wetRoad);
+    this.atmosphere.setGrey(w.grey);
   }
 
   get timeOfDay(): TimeOfDay {
@@ -131,9 +161,16 @@ export class World {
     return { x: this.path.centerX(z), z, heading: this.path.heading(z) };
   }
 
-  update(dt: number, bikePos: Vector3, cameraPos: Vector3, bikeSpeed = 0): void {
+  update(
+    dt: number,
+    bikePos: Vector3,
+    cameraPos: Vector3,
+    bikeSpeed = 0,
+    bikeForward: Vector3 = _fwd,
+  ): void {
     this.atmosphere.update(bikePos, cameraPos);
     this.traffic?.update(dt, bikePos.z, bikeSpeed);
+    this.weather.update(dt, cameraPos, bikeForward, bikeSpeed);
     this.terrain?.update(bikePos);
     this.road?.update(bikePos.z);
     this.veg?.update(bikePos.z);
@@ -158,6 +195,9 @@ export class World {
     this.traffic?.dispose();
     this.terrain = this.road = this.veg = this.ocean = this.city = null;
     this.traffic = null;
-    if (all) this.atmosphere.dispose();
+    if (all) {
+      this.atmosphere.dispose();
+      this.weather.dispose();
+    }
   }
 }

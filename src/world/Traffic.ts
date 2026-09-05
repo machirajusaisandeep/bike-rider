@@ -181,7 +181,8 @@ export class Traffic {
   reset(bikeZ: number, seed = this.seed): void {
     this.seed = seed;
     this.rnd = seededRandom(seed);
-    for (const v of this.vehicles) this.release(this.vehiclePools.get(v.kind as VehicleKind)!, v.instance);
+    for (const v of this.vehicles)
+      this.release(this.vehiclePools.get(v.kind as VehicleKind)!, v.instance);
     this.vehicles = [];
     for (const h of this.hazards) this.release(this.hazardPools.get(h.kind as HazardKind)!, h.id);
     this.hazards = [];
@@ -257,7 +258,8 @@ export class Traffic {
     if (dir === 1 && bikeSpeed > cruise) z -= 40;
     for (let tries = 0; tries < 6; tries++) {
       const clash = this.vehicles.some(
-        (o) => o.laneLat === laneLat && o.dir === dir && Math.abs(o.z - z) < o.halfL + spec.halfL + 18,
+        (o) =>
+          o.laneLat === laneLat && o.dir === dir && Math.abs(o.z - z) < o.halfL + spec.halfL + 18,
       );
       if (!clash) break;
       z -= 30;
@@ -371,9 +373,11 @@ export class Traffic {
         this.hazards.push(h);
         const x = path.centerX(z) + lat;
         const yaw =
-          spec.placement === 'road' ? path.heading(z) : kind === 'cow' || kind === 'goat'
-            ? path.heading(z) + (rnd() - 0.5) * 1.6
-            : rnd() * Math.PI * 2;
+          spec.placement === 'road'
+            ? path.heading(z)
+            : kind === 'cow' || kind === 'goat'
+              ? path.heading(z) + (rnd() - 0.5) * 1.6
+              : rnd() * Math.PI * 2;
         _p.set(x, this.hf.height(x, z), z);
         _q.setFromAxisAngle(_up, yaw);
         pool.mesh.setMatrixAt(id, _m.compose(_p, _q, _s));

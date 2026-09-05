@@ -112,7 +112,12 @@ export function buildVehicle(kind: VehicleKind, rnd: () => number = Math.random)
         wheel(0, 0.6, 0.24, 0.1),
         // rider blob
         place(colorize(new BoxGeometry(0.42, 0.55, 0.32), 0x445566, 0.1), 0, 1.15, 0.2),
-        place(colorize(new SphereGeometry(0.15, 8, 6), pick([0x111111, 0xdddddd], rnd)), 0, 1.58, 0.2),
+        place(
+          colorize(new SphereGeometry(0.15, 8, 6), pick([0x111111, 0xdddddd], rnd)),
+          0,
+          1.58,
+          0.2,
+        ),
       ];
       return merge(parts);
     }
@@ -242,7 +247,14 @@ export interface HazardSpec {
 
 export const HAZARD_SPECS: Record<HazardKind, HazardSpec> = {
   cow: { kind: 'cow', halfW: 0.5, halfL: 1.1, effect: 'solid', placement: 'lane', label: 'Cow' },
-  goat: { kind: 'goat', halfW: 0.3, halfL: 0.55, effect: 'solid', placement: 'edge', label: 'Goat' },
+  goat: {
+    kind: 'goat',
+    halfW: 0.3,
+    halfL: 0.55,
+    effect: 'solid',
+    placement: 'edge',
+    label: 'Goat',
+  },
   rock: { kind: 'rock', halfW: 0.6, halfL: 0.6, effect: 'solid', placement: 'lane', label: 'Rock' },
   barrel: {
     kind: 'barrel',

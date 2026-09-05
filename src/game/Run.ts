@@ -26,7 +26,7 @@ export interface RunStats {
   nearMisses: number;
   bestCombo: number;
   crashes: number;
-  cause: 'crash' | 'lost' | 'quit' | null;
+  cause: 'crash' | 'lost' | 'quit' | 'complete' | null;
 }
 
 export const COUNTDOWN_S = 2.4;
@@ -99,7 +99,7 @@ export class Run {
 
   finish(): void {
     if (this.phase === 'summary') return;
-    if (this.phase === 'riding') this.stats.cause = 'quit';
+    if (this.phase === 'riding' && !this.stats.cause) this.stats.cause = 'quit';
     this.set('summary');
   }
 

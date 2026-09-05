@@ -109,7 +109,10 @@ export class BikePhysics {
       this.updateCrash(dt);
       return;
     }
-    const grip = SURFACE_GRIP[this.surface] * (this.surface === 'asphalt' ? 1 : this.tune.offroad) * this.tune.grip;
+    const grip =
+      SURFACE_GRIP[this.surface] *
+      (this.surface === 'asphalt' ? 1 : this.tune.offroad) *
+      this.tune.grip;
     const v = this.speed;
     const absV = Math.abs(v);
     const ratio = this.speedRatio;
@@ -118,7 +121,12 @@ export class BikePhysics {
     let a = 0;
     if (input.throttle > 0 && v > -0.2) {
       // Power tails off approaching top speed.
-      a += input.throttle * BIKE.accel * this.tune.power * (1 - 0.55 * ratio * ratio) * (0.6 + 0.4 * grip);
+      a +=
+        input.throttle *
+        BIKE.accel *
+        this.tune.power *
+        (1 - 0.55 * ratio * ratio) *
+        (0.6 + 0.4 * grip);
     }
     const reversing = input.brake > 0 && v <= 0.25 && input.throttle === 0;
     if (input.brake > 0) {
