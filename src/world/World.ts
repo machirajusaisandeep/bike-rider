@@ -11,6 +11,8 @@ import { SCENE_BY_ID, type SceneDef, type SceneId } from './scenes';
 import { Terrain } from './Terrain';
 import { Traffic } from './Traffic';
 import { Weather, type WeatherId } from './Weather';
+import { Gates } from './Gates';
+import type { Checkpoint } from '../game/routes';
 import { Vegetation } from './Vegetation';
 
 const _fwd = new Vector3(0, 0, -1);
@@ -31,6 +33,7 @@ export class World {
   private city: City | null = null;
   traffic: Traffic | null = null;
   readonly weather: Weather;
+  private gates: Gates | null = null;
   private quality: Quality;
   private time: TimeOfDay = 'auto';
   private _exposure = 1;
@@ -72,6 +75,15 @@ export class World {
     }
     this.setTimeOfDay(time);
     this.road.setWet(this.weather.params.wetRoad);
+  }
+
+  /** Route checkpoint gates; null removes them. */
+  setGates(checkpoints: Checkpoint[] | null): void {
+    this.gates?.dispose();
+    this.gates = null;
+    if (!checkpoints) return;
+    this.gates = new Gates(this.heights, checkpoints);
+    this.scene.add(this.gates.group);
   }
 
   /** (Re)creates traffic for a run. Pass `null` density to remove traffic (free ride). */
@@ -193,8 +205,10 @@ export class World {
     this.ocean?.dispose();
     this.city?.dispose();
     this.traffic?.dispose();
+    this.gates?.dispose();
     this.terrain = this.road = this.veg = this.ocean = this.city = null;
     this.traffic = null;
+    this.gates = null;
     if (all) {
       this.atmosphere.dispose();
       this.weather.dispose();

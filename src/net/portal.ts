@@ -36,7 +36,11 @@ interface CrazyGamesSDK {
   ad: {
     requestAd: (
       type: 'midgame' | 'rewarded',
-      callbacks: { adFinished?: () => void; adError?: (e: unknown) => void; adStarted?: () => void },
+      callbacks: {
+        adFinished?: () => void;
+        adError?: (e: unknown) => void;
+        adStarted?: () => void;
+      },
     ) => void;
   };
 }

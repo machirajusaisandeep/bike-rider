@@ -9,6 +9,7 @@ import {
 } from '../core/settings';
 import type { Surface } from '../game/BikePhysics';
 import { CAMERA_LABELS } from '../game/ChaseCamera';
+import { t } from '../core/i18n';
 
 export interface HudData {
   speedKmh: number;
@@ -214,21 +215,14 @@ export class Hud {
     this.root.appendChild(bc);
 
     // --- hints ------------------------------------------------------------------------
-    this.offRouteEl = el(
-      'div',
-      'toast toast-warn',
-      'Off route · press <b>R</b> to get back on the road',
-    );
+    this.offRouteEl = el('div', 'toast toast-warn', t('hud.offroute'));
+    this.offRouteEl.dataset.i18nHtml = 'hud.offroute';
     this.offRouteEl.hidden = true;
     this.root.appendChild(this.offRouteEl);
     this.statusEl = el('div', 'toast toast-status', '');
     this.statusEl.hidden = true;
     this.root.appendChild(this.statusEl);
-    this.startHint = el(
-      'div',
-      'start-hint',
-      '<span>Hold</span><span class="key">W</span><span>or</span><span class="key">↑</span><span>to ride</span>',
-    );
+    this.startHint = el('div', 'start-hint', t('hud.hint.free'));
     this.root.appendChild(this.startHint);
 
     // --- pause overlay ----------------------------------------------------------------
@@ -236,12 +230,12 @@ export class Hud {
     this.pauseOverlay.hidden = true;
     this.pauseOverlay.innerHTML = `
       <div class="overlay-card">
-        <div class="overlay-title">Paused</div>
-        <p>Take a breather. Your bike is right where you left it.</p>
-        <button class="btn-primary" data-action="resume">Resume</button>
-        <button class="btn-ghost" data-action="reset">Reset bike</button>
-        <button class="btn-ghost" data-action="photo">Photo mode</button>
-        <button class="btn-ghost" data-action="quit">End run · change road</button>
+        <div class="overlay-title" data-i18n="hud.paused">Paused</div>
+        <p data-i18n="hud.paused.sub">Take a breather. Your bike is right where you left it.</p>
+        <button class="btn-primary" data-action="resume" data-i18n="hud.resume">Resume</button>
+        <button class="btn-ghost" data-action="reset" data-i18n="hud.resetBike">Reset bike</button>
+        <button class="btn-ghost" data-action="photo" data-i18n="hud.photo">Photo mode</button>
+        <button class="btn-ghost" data-action="quit" data-i18n="hud.quit">End run · change road</button>
       </div>`;
     this.pauseOverlay.addEventListener('click', (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
@@ -289,7 +283,9 @@ export class Hud {
       opts: { v: T; l: string }[],
     ) => {
       const row = el('div', 'row');
-      row.appendChild(el('div', 'row-label', label));
+      const lab = el('div', 'row-label', t(label));
+      lab.dataset.i18n = label;
+      row.appendChild(lab);
       const seg = el('div', 'seg');
       seg.dataset.key = key;
       for (const o of opts) {
@@ -315,14 +311,14 @@ export class Hud {
     head.appendChild(this.iconButton(ICONS.close, 'Close', () => this.toggleSettings(false)));
     panel.appendChild(head);
     panel.appendChild(
-      segmented<Quality>('Quality', 'quality', [
+      segmented<Quality>('set.quality', 'quality', [
         { v: 'low', l: 'Low' },
         { v: 'medium', l: 'Medium' },
         { v: 'high', l: 'High' },
       ]),
     );
     panel.appendChild(
-      segmented<TimeOfDay>('Time of day', 'timeOfDay', [
+      segmented<TimeOfDay>('set.time', 'timeOfDay', [
         { v: 'auto', l: 'Scene' },
         { v: 'day', l: 'Noon' },
         { v: 'golden', l: 'Golden' },
@@ -330,7 +326,7 @@ export class Hud {
       ]),
     );
     panel.appendChild(
-      segmented<Settings['weather']>('Weather', 'weather', [
+      segmented<Settings['weather']>('set.weather', 'weather', [
         { v: 'clear', l: 'Clear' },
         { v: 'rain', l: 'Monsoon' },
         { v: 'fog', l: 'Fog' },
@@ -338,7 +334,7 @@ export class Hud {
       ]),
     );
     panel.appendChild(
-      segmented<Settings['language']>('Language', 'language', [
+      segmented<Settings['language']>('set.language', 'language', [
         { v: 'en', l: 'EN' },
         { v: 'hi', l: 'हि' },
         { v: 'kn', l: 'ಕ' },
@@ -347,20 +343,20 @@ export class Hud {
       ]),
     );
     panel.appendChild(
-      segmented<CameraMode>('Camera', 'cameraMode', [
+      segmented<CameraMode>('set.camera', 'cameraMode', [
         { v: 'chase', l: 'Chase' },
         { v: 'cockpit', l: 'Cockpit' },
         { v: 'cinematic', l: 'Cinematic' },
       ]),
     );
     panel.appendChild(
-      segmented<Units>('Units', 'units', [
+      segmented<Units>('set.units', 'units', [
         { v: 'kmh', l: 'km/h' },
         { v: 'mph', l: 'mph' },
       ]),
     );
     panel.appendChild(
-      segmented<Settings['touchControls']>('Touch controls', 'touchControls', [
+      segmented<Settings['touchControls']>('set.touch', 'touchControls', [
         { v: 'auto', l: 'Auto' },
         { v: 'on', l: 'On' },
         { v: 'off', l: 'Off' },
@@ -488,9 +484,7 @@ export class Hud {
 
   /** Replace the start hint (null restores the default and re-arms it). */
   setHint(html: string | null): void {
-    this.startHint.innerHTML =
-      html ??
-      '<span>Hold</span><span class="key">W</span><span>or</span><span class="key">↑</span><span>to ride</span>';
+    this.startHint.innerHTML = html ?? t('hud.hint.free');
     this.startHint.classList.remove('gone');
     this.hintDismissed = false;
   }

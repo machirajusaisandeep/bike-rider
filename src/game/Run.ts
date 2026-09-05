@@ -8,7 +8,7 @@ import type { Seed } from '../core/seed';
  *  - daily: a ride on the daily seed and scene, one shared board.
  *  - mission: a ride with an objective attached (see missions.ts).
  */
-export type GameMode = 'free' | 'ride' | 'daily' | 'mission';
+export type GameMode = 'free' | 'ride' | 'daily' | 'mission' | 'route';
 
 export type RunPhase = 'idle' | 'countdown' | 'riding' | 'crashed' | 'summary';
 
@@ -17,6 +17,7 @@ export interface RunConfig {
   scene: SceneId;
   seed: Seed;
   missionId?: string;
+  routeId?: string;
 }
 
 export interface RunStats {
@@ -26,7 +27,7 @@ export interface RunStats {
   nearMisses: number;
   bestCombo: number;
   crashes: number;
-  cause: 'crash' | 'lost' | 'quit' | 'complete' | null;
+  cause: 'crash' | 'lost' | 'quit' | 'complete' | 'arrived' | null;
 }
 
 export const COUNTDOWN_S = 2.4;
@@ -103,6 +104,14 @@ export class Run {
     this.set('summary');
   }
 
+  /** Rewarded continue: back from the summary into the same run. */
+  revive(): void {
+    if (this.phase !== 'summary' && this.phase !== 'crashed') return;
+    this.stats.cause = null;
+    this.sinceCrash = 0;
+    this.set('riding');
+  }
+
   /** Back to the sandbox: stop scoring, keep riding. */
   toFree(): void {
     this.config = { ...this.config, mode: 'free' };
@@ -133,4 +142,5 @@ export const MODE_LABEL: Record<GameMode, string> = {
   ride: 'Ride',
   daily: 'Daily challenge',
   mission: 'Mission',
+  route: 'Route',
 };

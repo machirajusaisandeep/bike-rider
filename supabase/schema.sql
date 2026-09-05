@@ -92,3 +92,32 @@ grant insert (mode, scene, seed, day, score, distance_m, duration_s, top_kmh, ne
 -- Optional housekeeping: keep only the last 60 days of daily runs.
 -- select cron.schedule('purge-old-dailies', '0 4 * * *',
 --   $$delete from public.runs where mode = 'daily' and created_at < now() - interval '60 days'$$);
+
+-- ---------------------------------------------------------------------------------------------
+-- Shared ghosts (group ride on the daily board). Samples live in a public storage bucket, this
+-- table indexes them so the client can fetch the top few per board.
+create table if not exists public.ghosts (
+  id          uuid primary key default gen_random_uuid(),
+  created_at  timestamptz not null default now(),
+  board       text not null,               -- e.g. daily:20260905 or ride:munnar
+  handle      text not null check (char_length(handle) between 1 and 16),
+  score       integer not null check (score >= 0),
+  path        text not null                -- object path inside the ghosts bucket
+);
+create index if not exists ghosts_board on public.ghosts (board, score desc);
+
+alter table public.ghosts enable row level security;
+drop policy if exists "ghost index is public" on public.ghosts;
+create policy "ghost index is public" on public.ghosts for select to anon, authenticated using (true);
+drop policy if exists "anyone can index a ghost" on public.ghosts;
+create policy "anyone can index a ghost" on public.ghosts for insert to anon, authenticated with check (true);
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('ghosts', 'ghosts', true, 262144, array['text/plain'])
+  on conflict (id) do nothing;
+drop policy if exists "ghost files are public" on storage.objects;
+create policy "ghost files are public" on storage.objects
+  for select to anon, authenticated using (bucket_id = 'ghosts');
+drop policy if exists "anyone can upload a ghost" on storage.objects;
+create policy "anyone can upload a ghost" on storage.objects
+  for insert to anon, authenticated with check (bucket_id = 'ghosts');

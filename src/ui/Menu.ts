@@ -20,6 +20,7 @@ import {
 } from '../game/gear';
 import { SCENES, type SceneDef, type SceneId } from '../world/scenes';
 import type { GameMode } from '../game/Run';
+import { t } from '../core/i18n';
 
 export type MenuStep = 'rider' | 'scene';
 export type RiderTab = 'face' | 'hair' | 'gear';
@@ -36,6 +37,7 @@ export interface MenuCallbacks {
   onModeChange: (mode: GameMode) => void;
   onOpenMissions: () => void;
   onOpenGarage: () => void;
+  onOpenRoutes: () => void;
 }
 
 const ICON: Record<SceneDef['category'], string> = {
@@ -125,7 +127,7 @@ export class Menu {
         <header class="menu-head">
           <div class="menu-topline">
             <div class="menu-brand"><span class="brand-dot"></span>BIKE RIDER</div>
-            <div class="menu-steps"><span class="step-dot" data-step="rider">1 Rider</span><span class="step-dot" data-step="scene">2 Road</span></div>
+            <div class="menu-steps"><span class="step-dot" data-step="rider" data-i18n="menu.step.rider">1 Rider</span><span class="step-dot" data-step="scene" data-i18n="menu.step.road">2 Road</span></div>
           </div>
           <h1 class="menu-title"></h1>
           <p class="menu-sub"></p>
@@ -134,14 +136,15 @@ export class Menu {
         <section class="panel-scene" hidden>
           <div class="mode-row">
             <div class="seg mode-seg">
-              <button type="button" class="seg-btn active" data-mode="ride">Ride</button>
-              <button type="button" class="seg-btn" data-mode="daily">Daily challenge</button>
-              <button type="button" class="seg-btn" data-mode="free">Free ride</button>
+              <button type="button" class="seg-btn active" data-mode="ride" data-i18n="menu.mode.ride">Ride</button>
+              <button type="button" class="seg-btn" data-mode="daily" data-i18n="menu.mode.daily">Daily challenge</button>
+              <button type="button" class="seg-btn" data-mode="free" data-i18n="menu.mode.free">Free ride</button>
             </div>
             <div class="mode-note"></div>
             <div class="mode-right">
-              <button type="button" class="link-btn btn-missions">Missions</button>
-              <button type="button" class="link-btn btn-garage">Garage</button>
+              <button type="button" class="link-btn btn-routes" data-i18n="menu.routes">Routes</button>
+              <button type="button" class="link-btn btn-missions" data-i18n="menu.missions">Missions</button>
+              <button type="button" class="link-btn btn-garage" data-i18n="menu.garage">Garage</button>
               <span class="coins" title="Coins">🪙 <b class="coins-num">0</b></span>
             </div>
           </div>
@@ -155,7 +158,7 @@ export class Menu {
             <div class="menu-actions">
               <button type="button" class="btn-primary btn-start">Start ride <span class="key">↵</span></button>
               <div class="menu-keys">
-                <button type="button" class="link-btn btn-back">← Rider &amp; gear</button>
+                <button type="button" class="link-btn btn-back" data-i18n="menu.back">← Rider &amp; gear</button>
                 <span><span class="key">W</span><span class="key">↑</span> throttle</span>
                 <span><span class="key">A</span><span class="key">D</span> steer</span>
                 <span><span class="key">Space</span> brake</span>
@@ -342,6 +345,9 @@ export class Menu {
       .querySelector<HTMLButtonElement>('.btn-garage')!
       .addEventListener('click', () => this.cb.onOpenGarage());
     this.scenePanel
+      .querySelector<HTMLButtonElement>('.btn-routes')!
+      .addEventListener('click', () => this.cb.onOpenRoutes());
+    this.scenePanel
       .querySelector<HTMLButtonElement>('.btn-back')!
       .addEventListener('click', () => this.setStep('rider'));
     this.placeEl = this.scenePanel.querySelector<HTMLElement>('.menu-selected-place')!;
@@ -367,12 +373,11 @@ export class Menu {
     this.stepDots.forEach((d) => d.classList.toggle('active', d.dataset.step === step));
     const sub = this.root.querySelector<HTMLElement>('.menu-sub')!;
     if (step === 'rider') {
-      this.titleEl.innerHTML = 'Create your <em>rider</em>';
-      sub.textContent = 'Face, hair and riding gear. What you wear is what protects you.';
+      this.titleEl.innerHTML = t('menu.rider.title');
+      sub.textContent = t('menu.rider.sub');
     } else {
-      this.titleEl.innerHTML = 'Ride India on a <em>Scram 411</em>';
-      sub.textContent =
-        'Pick a road. Tea hills, Himalayan passes, rainforest ghats, a cliff above the sea or the city at dusk.';
+      this.titleEl.innerHTML = t('menu.scene.title');
+      sub.textContent = t('menu.scene.sub');
     }
     if (notify) this.cb.onStepChange(step);
     if (notify && step === 'rider') this.cb.onFocus(this.tab);
@@ -511,10 +516,10 @@ export class Menu {
     this.descEl.textContent = def.description;
     this.startBtn.innerHTML =
       this.mode === 'daily'
-        ? `Ride today's daily <span class="key">↵</span>`
+        ? `${t('menu.start.daily')} <span class="key">↵</span>`
         : this.mode === 'free'
-          ? `Cruise ${def.name} <span class="key">↵</span>`
-          : `Ride ${def.name} <span class="key">↵</span>`;
+          ? `${t('menu.start.free', { scene: def.name })} <span class="key">↵</span>`
+          : `${t('menu.start.ride', { scene: def.name })} <span class="key">↵</span>`;
     if (preview) this.cb.onPreview(id);
   }
 
@@ -532,10 +537,10 @@ export class Menu {
     else this.select(this.selected, false);
     this.modeNote.textContent =
       this.mode === 'daily'
-        ? `Same road and traffic for everyone today${this.dailyStreak > 1 ? ` · ${this.dailyStreak}-day streak` : ''}`
+        ? `${t('menu.note.daily')}${this.dailyStreak > 1 ? ` · ${t('menu.streak', { n: this.dailyStreak })}` : ''}`
         : this.mode === 'free'
-          ? 'No traffic, no score. Just the road.'
-          : 'Traffic, hazards, near-miss combos. Crash and the run ends.';
+          ? t('menu.note.free')
+          : t('menu.note.ride');
     if (notify) this.cb.onModeChange(this.mode);
   }
 
@@ -558,8 +563,17 @@ export class Menu {
       const el = card.querySelector<HTMLElement>('.scene-best')!;
       const b = this.bests[id];
       el.hidden = !b;
-      if (b) el.textContent = `Best ${Math.round(b).toLocaleString('en-IN')}`;
+      if (b) el.textContent = t('menu.best', { n: Math.round(b).toLocaleString('en-IN') });
     }
+  }
+
+  /** Re-render every translated string after a language change. */
+  refreshTexts(): void {
+    this.setStep(this.step, false);
+    this.setMode(this.mode);
+    this.setBests(this.bests);
+    const next = this.riderPanel.querySelector<HTMLElement>('.btn-next');
+    if (next) next.innerHTML = `${t('menu.next')} <span class="key">↵</span>`;
   }
 
   setCoins(n: number): void {

@@ -44,6 +44,13 @@ import {
 import { BIKE_BY_ID, tuneFor } from './upgrades';
 import { saveProfile } from '../core/profile';
 import type { WeatherId } from '../world/Weather';
+import { RoutesPanel } from '../ui/Routes';
+import { DHABA_HEAL, ROUTE_BY_ID, routeProgress, type Route } from './routes';
+import { clipSupported, recordClip, shareClip } from '../share/Clip';
+import { fetchGhosts, uploadGhost } from '../net/ghosts';
+import { initPortal, portal } from '../net/portal';
+import { applyLanguage, getLanguage as getLang, onLanguage, setLanguage, t } from '../core/i18n';
+import { Color } from 'three';
 import { renderCard, shareCard } from '../share/Card';
 import { submitRun } from '../net/leaderboard';
 import { Dust } from '../world/Dust';
@@ -55,7 +62,14 @@ import { BikePhysics } from './BikePhysics';
 import { ChaseCamera } from './ChaseCamera';
 import { EngineAudio } from './EngineAudio';
 import { FACES, GEAR_BY_ID, HAIR, protectionFor, sanitizeRider, type RiderConfig } from './gear';
-import { GhostRecorder, GhostRider, loadGhost, saveGhost } from './Ghost';
+import {
+  GhostRecorder,
+  GhostRider,
+  loadGhost,
+  sampleGhost,
+  saveGhost,
+  type GhostSample,
+} from './Ghost';
 import { Health } from './Health';
 import { Rider } from './Rider';
 import { MODE_LABEL, Run, type GameMode } from './Run';
@@ -132,6 +146,12 @@ export class Game {
   private missionEvalT = 0;
   private wasBraking = false;
   private photoReturn: 'summary' | 'ride' | 'paused' | null = null;
+  private routesPanel!: RoutesPanel;
+  private route: Route | null = null;
+  private routePassed = 0;
+  private others: GhostRider[] = [];
+  private replaying = false;
+  private continued = false;
 
   constructor(private container: HTMLElement) {
     const stored = localStorage.getItem('bike-rider.settings.v2');
@@ -139,6 +159,12 @@ export class Game {
     this.settings = loadSettings();
     this.profile = loadProfile();
     initAnalytics();
+    void initPortal();
+    setLanguage(this.settings.language);
+    onLanguage(() => {
+      this.menu?.refreshTexts();
+      applyLanguage(this.hud?.root ?? document.body);
+    });
     if (this.firstRun) this.settings.quality = autoQuality();
     const camParam = this.params.get('camera');
     if (camParam === 'chase' || camParam === 'cockpit' || camParam === 'cinematic')
@@ -241,11 +267,19 @@ export class Game {
       onModeChange: (mode) => track('mode_select', { mode }),
       onOpenMissions: () => this.missionsPanel.show(this.menu.current),
       onOpenGarage: () => this.garage.show(),
+      onOpenRoutes: () => this.routesPanel.show(),
+    });
+    this.routesPanel = new RoutesPanel(container, () => this.profile, {
+      onStart: (r) => {
+        this.routesPanel.hide();
+        this.launch('route', r.scene, randomSeed(), { routeId: r.id });
+      },
+      onClose: () => this.routesPanel.hide(),
     });
     this.missionsPanel = new MissionsPanel(container, this.settings.scene, () => this.profile, {
       onStart: (m) => {
         this.missionsPanel.hide();
-        this.launch('mission', m.scene, randomSeed(), m.id);
+        this.launch('mission', m.scene, randomSeed(), { missionId: m.id });
       },
       onClose: () => this.missionsPanel.hide(),
     });
@@ -289,13 +323,17 @@ export class Game {
         this.startFreeRide();
       },
       onPhoto: () => this.openPhoto(),
+      onClip: () => void this.recordReplay(),
+      onContinue: () => void this.continueRun(),
     });
+    applyLanguage(container);
 
     this.input.on('KeyR', () => !this.attract && !this.summary.visible && this.reset(true));
     this.input.on('KeyC', () => !this.attract && this.cycleCamera());
     this.input.on('KeyP', () => !this.attract && !this.summary.visible && this.togglePause());
     this.input.on('Escape', () => {
       if (this.photo.visible || this.missionsPanel.visible || this.garage.visible) return;
+      if (this.routesPanel.visible || this.replaying) return;
       if (this.attract || this.summary.visible) return;
       if (this.run.scored && this.run.phase !== 'idle') this.togglePause();
       else this.openMenu();
@@ -530,7 +568,12 @@ export class Game {
     this.launch(mode, scene, seed);
   }
 
-  private launch(mode: GameMode, scene: SceneId, seed: Seed, missionId?: string): void {
+  private launch(
+    mode: GameMode,
+    scene: SceneId,
+    seed: Seed,
+    extra: { missionId?: string; routeId?: string } = {},
+  ): void {
     this.switchScene(scene);
     this.menu.hide();
     this.summary.hide();
@@ -541,11 +584,17 @@ export class Game {
     this.chase.setCloseUp(false);
     this.chase.setMode(this.savedCamera);
     this.hud.setCameraMode(this.savedCamera);
-    this.beginRun({ mode, scene, seed, missionId });
+    this.beginRun({ mode, scene, seed, ...extra });
     this.clock.getDelta();
   }
 
-  private beginRun(cfg: { mode: GameMode; scene: SceneId; seed: Seed; missionId?: string }): void {
+  private beginRun(cfg: {
+    mode: GameMode;
+    scene: SceneId;
+    seed: Seed;
+    missionId?: string;
+    routeId?: string;
+  }): void {
     // Every run starts at the head of the road so seeds, ghosts and boards line up.
     this.physics.position.set(0, 0, 0);
     this.reset();
@@ -569,12 +618,26 @@ export class Game {
       this.ghost?.load(g?.data ?? null);
     } else this.ghost?.load(null);
     this.mission = cfg.missionId ? (MISSION_BY_ID[cfg.missionId] ?? null) : null;
+    this.route = cfg.routeId ? (ROUTE_BY_ID[cfg.routeId] ?? null) : null;
+    this.routePassed = 0;
+    this.continued = false;
+    this.world.setGates(this.route?.checkpoints ?? null);
+    this.clearOthers();
+    if (cfg.mode === 'daily') this.loadOthers(this.boardKey(cfg.mode, cfg.scene));
     this.live = freshLive();
     this.missionState = 'live';
     this.missionEvalT = 0;
     this.wasBraking = false;
     if (this.mission) this.hud.setObjective(this.mission.title, this.mission.desc, 0, 'live');
-    else this.hud.setObjective(null);
+    else if (this.route) {
+      const first = this.route.checkpoints[0]!;
+      this.hud.setObjective(
+        this.route.name,
+        t('route.next', { name: first.name, m: first.at }),
+        0,
+        'live',
+      );
+    } else this.hud.setObjective(null);
     this.hud.setRun(scored, MODE_LABEL[cfg.mode]);
     this.hud.setHint(
       scored
@@ -590,8 +653,47 @@ export class Game {
     const c = this.run.config;
     const seed = c.mode === 'daily' ? c.seed : randomSeed();
     track('retry', { mode: c.mode, scene: c.scene });
-    this.beginRun({ mode: c.mode, scene: c.scene, seed, missionId: c.missionId });
+    const go = () => {
+      this.beginRun({
+        mode: c.mode,
+        scene: c.scene,
+        seed,
+        missionId: c.missionId,
+        routeId: c.routeId,
+      });
+      this.clock.getDelta();
+    };
+    if (portal.active) {
+      void portal
+        .maybeCommercialBreak(
+          () => this.audio.setEnabled(false),
+          () => this.audio.setEnabled(this.settings.sound),
+        )
+        .then(go);
+    } else go();
+  }
+
+  /** Rewarded continue: health back to half, bike on the road, same run. */
+  private async continueRun(): Promise<void> {
+    if (this.continued || this.run.phase !== 'summary') return;
+    const ok = await portal.rewardedBreak(
+      () => this.audio.setEnabled(false),
+      () => this.audio.setEnabled(this.settings.sound),
+    );
+    if (!ok) return;
+    this.continued = true;
+    this.summary.hide();
+    this.physics.crashed = false;
+    this.health.hp = Math.max(this.health.hp, 0.5);
+    this.reset();
+    this.run.revive();
+    this.hud.setCountdown(null);
     this.clock.getDelta();
+    track('run_start', {
+      mode: this.run.config.mode,
+      scene: this.run.config.scene,
+      continued: true,
+    });
   }
 
   private startFreeRide(): void {
@@ -607,7 +709,11 @@ export class Game {
   }
 
   private onRunPhase(phase: Run['phase']): void {
-    if (phase === 'riding') this.goTimer = GO_FLASH_S;
+    if (phase === 'riding') {
+      this.goTimer = GO_FLASH_S;
+      portal.gameplayStart();
+    }
+    if (phase === 'crashed' || phase === 'summary' || phase === 'idle') portal.gameplayStop();
     if (phase === 'summary') this.showSummary();
   }
 
@@ -643,6 +749,14 @@ export class Game {
         track('mission_complete', { id: this.mission.id });
       }
     }
+    let routeDone = false;
+    if (this.route && s.cause === 'arrived') {
+      routeDone = true;
+      if (!this.profile.routesDone.includes(this.route.id)) {
+        this.profile.routesDone.push(this.route.id);
+        this.profile.coins += this.route.reward;
+      }
+    }
     const { newBest, coins } = recordRun(this.profile, {
       mode: c.mode,
       scene: c.scene,
@@ -654,25 +768,39 @@ export class Game {
       nearMisses: s.nearMisses,
       bestCombo: s.bestCombo,
     });
-    if (newBest) saveGhost(this.boardKey(c.mode, c.scene), score, c.seed, this.ghostRec);
+    if (newBest) {
+      saveGhost(this.boardKey(c.mode, c.scene), score, c.seed, this.ghostRec);
+      portal.happyTime();
+      if (c.mode === 'daily' && this.ghostRec.samples > 20)
+        void uploadGhost(
+          this.boardKey(c.mode, c.scene),
+          this.profile.handle,
+          score,
+          this.ghostRec.serialize(),
+        );
+    }
     const cause =
       s.cause === 'crash'
-        ? `Crashed into a ${this.crashLabel.toLowerCase()}`
+        ? t('sum.crash', { what: articled(this.crashLabel.toLowerCase()) })
         : s.cause === 'lost'
-          ? 'Off the road'
+          ? t('sum.lost')
           : s.cause === 'complete'
-            ? 'Mission complete!'
-            : 'Run ended';
+            ? t('sum.complete')
+            : s.cause === 'arrived'
+              ? t('sum.arrived', { to: this.route?.to ?? '' })
+              : t('sum.ended');
     const detail =
       s.cause === 'crash'
-        ? `${Math.round(this.crashKmh)} km/h impact · protection ${this.protection}/100`
+        ? t('sum.crashDetail', { kmh: Math.round(this.crashKmh), p: this.protection })
         : s.cause === 'lost'
           ? this.world.def.water
-            ? 'Into the sea. Stay on the tarmac.'
-            : 'Down the hillside. Stay on the tarmac.'
+            ? t('sum.lostSea')
+            : t('sum.lostHill')
           : s.cause === 'complete'
             ? `${this.mission?.title ?? 'Objective'} done. Coins banked.`
-            : 'You ended the run from the pause menu.';
+            : s.cause === 'arrived'
+              ? t('sum.arrivedDetail', { route: this.route?.name ?? '' })
+              : t('sum.endedDetail');
     this.summary.show({
       mode: c.mode,
       sceneName: SCENE_BY_ID[c.scene].name,
@@ -684,8 +812,15 @@ export class Game {
       cause,
       causeDetail: detail,
       streak: c.mode === 'daily' ? this.profile.daily.streak : undefined,
-      mission: missionLine,
+      mission:
+        missionLine ??
+        (this.route
+          ? { title: this.route.name, done: routeDone, reward: routeDone ? this.route.reward : 0 }
+          : null),
+      canContinue: portal.active && !this.continued && s.cause === 'crash',
+      canClip: clipSupported() && this.ghostRec.samples > 30,
     });
+    this.clearOthers();
     this.hud.setObjective(null);
     this.refreshProgress();
     if (s.cause !== 'quit' || s.distanceM > 200) this.submitToBoard(score);
@@ -720,7 +855,7 @@ export class Game {
     const c = this.run.config;
     this.lastRank = null;
     void submitRun({
-      mode: c.mode === 'free' ? 'ride' : c.mode,
+      mode: c.mode === 'free' || c.mode === 'route' ? 'ride' : c.mode,
       scene: c.scene,
       seed: c.seed,
       day: c.mode === 'daily' ? todayKey() : null,
@@ -827,6 +962,149 @@ export class Game {
       this.missionState = 'failed';
       this.hud.setObjective(m.title, 'Out of time', r.progress, 'failed');
     } else this.hud.setObjective(m.title, r.label, r.progress, 'live');
+  }
+
+  // ------------------------------------------------------------------ routes ---------------
+  private updateRoute(): void {
+    const r = this.route!;
+    const run = this.run;
+    const prog = routeProgress(r, run.stats.distanceM);
+    while (this.routePassed < prog.passed) {
+      const c = r.checkpoints[this.routePassed]!;
+      this.routePassed++;
+      if (c.kind === 'dhaba') {
+        this.health.hp = Math.min(1, this.health.hp + DHABA_HEAL);
+        this.hud.popBonus(
+          t('route.dhaba', { name: c.name, n: Math.round(DHABA_HEAL * 100) }),
+          0,
+          'corner',
+        );
+      } else if (c.kind === 'finish') {
+        this.hud.popBonus(t('route.finish', { name: c.name }), 0, 'corner');
+        this.hud.setObjective(r.name, c.name, 1, 'done');
+        setTimeout(() => {
+          if (this.run.active && this.route === r) {
+            this.run.stats.cause = 'arrived';
+            this.run.finish();
+          }
+        }, 1500);
+        return;
+      } else {
+        this.hud.popBonus(t('route.pass', { name: c.name, note: c.note ?? '' }), 0, 'speed');
+      }
+    }
+    if (prog.next) {
+      this.hud.setObjective(
+        r.name,
+        t('route.next', { name: prog.next.name, m: Math.round(prog.remaining) }),
+        prog.passed / prog.total +
+          (1 / prog.total) *
+            (1 -
+              prog.remaining /
+                Math.max(1, prog.next.at - (r.checkpoints[prog.passed - 1]?.at ?? 0))),
+        'live',
+      );
+    }
+  }
+
+  // ------------------------------------------------------------------ group ride -----------
+  private clearOthers(): void {
+    for (const g of this.others) g.dispose();
+    this.others = [];
+  }
+
+  private loadOthers(board: string): void {
+    const tints = [0xffb428, 0xff5a1f, 0x7ee08a];
+    void fetchGhosts(board, this.profile.handle).then((list) => {
+      if (
+        this.run.config.mode !== 'daily' ||
+        this.boardKey('daily', this.run.config.scene) !== board
+      )
+        return;
+      this.clearOthers();
+      list.forEach((g, i) => {
+        const rider = new GhostRider(new Color(tints[i % tints.length]!));
+        rider.label = g.handle;
+        rider.load(g.data);
+        this.scene.add(rider.bike.root);
+        this.others.push(rider);
+      });
+      if (list.length) this.hud.setStatus(`Riding with ${list.map((g) => g.handle).join(', ')}`);
+      setTimeout(() => this.hud.setStatus(null), 3000);
+    });
+  }
+
+  // ------------------------------------------------------------------ replay clip ----------
+  /** Re-run the last ~10 s of this run from the ghost samples under a cinematic camera. */
+  private async recordReplay(): Promise<void> {
+    if (this.replaying || !clipSupported() || this.ghostRec.samples < 30) return;
+    const data = deserializeOwn(this.ghostRec);
+    if (!data) return;
+    const T = data[data.length - 6]!;
+    const CLIP_S = Math.min(10, T);
+    const t0 = Math.max(0, T - CLIP_S);
+    this.replaying = true;
+    this.summary.hide();
+    this.hud.root.classList.add('photo-open');
+    this.summary.setClipState('Recording…');
+    const traffic = this.world.traffic;
+    if (traffic) traffic.group.visible = false;
+    this.ghost?.hide();
+    const prevMode = this.chase.mode;
+    this.chase.setMode('cinematic');
+    const p = this.physics;
+    const sample: GhostSample = { x: 0, y: 0, z: 0, heading: 0, lean: 0, speed: 0 };
+    let last = 0;
+    const crashed = p.crashed;
+    p.crashed = false;
+    try {
+      const blob = await recordClip({
+        canvas: this.renderer.domElement,
+        seconds: CLIP_S + 0.4,
+        tick: (t) => {
+          const dt = Math.min(0.1, Math.max(0.001, t - last));
+          last = t;
+          if (sampleGhost(data, t0 + Math.min(t, CLIP_S), sample)) {
+            p.position.set(sample.x, sample.y, sample.z);
+            p.heading = sample.heading;
+            p.lean = sample.lean;
+            p.speed = sample.speed;
+            p.forward.set(-Math.sin(p.heading), 0, -Math.cos(p.heading));
+          }
+          this.syncBikeTransform();
+          this.bike.spin(p.speed * dt);
+          this.chase.update(dt, p, 0, this.elapsed + t);
+          this.world.update(dt, p.position, this.camera.position, p.speed, p.forward);
+          if (this.post) this.post.render(dt);
+          else this.renderer.render(this.scene, this.camera);
+        },
+      });
+      const def = this.world.def;
+      const outcome = await shareClip(
+        blob,
+        `${this.scoring.rounded.toLocaleString('en-IN')} points on ${def.name} · Bike Rider`,
+        this.shareUrl(),
+      );
+      track('clip', { outcome, seconds: CLIP_S });
+      this.summary.setClipState(
+        outcome === 'shared'
+          ? 'Clip shared ✓'
+          : outcome === 'downloaded'
+            ? 'Clip saved ✓'
+            : t('sum.clip'),
+      );
+    } catch (e) {
+      console.info('[clip] failed', e);
+      this.summary.setClipState('Clip failed');
+    } finally {
+      if (traffic) traffic.group.visible = true;
+      p.crashed = crashed;
+      this.chase.setMode(prevMode);
+      this.hud.root.classList.remove('photo-open');
+      this.replaying = false;
+      this.summary.reveal();
+      this.clock.getDelta();
+    }
   }
 
   // ------------------------------------------------------------------ garage / weather -----
@@ -982,7 +1260,11 @@ export class Game {
       p.impulse(c.side, 0.45 + r.damage);
       this.chase.kick(0.6 + r.damage);
       this.hud.flashHit();
-      this.hud.popBonus(`Hit ${o.label.toLowerCase()}`, -Math.round(r.damage * 100), 'hit');
+      this.hud.popBonus(
+        t('bonus.hit', { what: o.label.toLowerCase() }),
+        -Math.round(r.damage * 100),
+        'hit',
+      );
       this.run.stats.crashes++;
     }
     // Near misses fire once as the rider's centre passes each obstacle.
@@ -994,8 +1276,10 @@ export class Game {
       this.run.stats.nearMisses++;
       this.run.stats.bestCombo = Math.max(this.run.stats.bestCombo, this.scoring.combo);
       this.live.currentCombo = this.scoring.combo;
+      const label =
+        bonus.combo > 1 ? t('bonus.nearMissCombo', { n: bonus.combo }) : t('bonus.nearMiss');
       this.hud.popBonus(
-        nm.oncoming ? `${bonus.label} · oncoming!` : bonus.label,
+        nm.oncoming ? `${label} · ${t('bonus.oncoming')}` : label,
         bonus.points,
         'nearMiss',
       );
@@ -1008,7 +1292,7 @@ export class Game {
     this.physics.crash(side);
     this.chase.kick(1.2);
     this.hud.flashHit();
-    this.hud.popBonus(`Crashed · ${label.toLowerCase()}`, 0, 'hit');
+    this.hud.popBonus(t('bonus.crash', { what: label.toLowerCase() }), 0, 'hit');
     this.run.crash('crash');
     this.run.stats.crashes++;
   }
@@ -1094,6 +1378,7 @@ export class Game {
     this.audio.setEnabled(s.sound);
     this.dust.setColor(this.world.dustColor);
     if (!initial) this.applyWeather(false);
+    if (s.language !== getLang()) setLanguage(s.language);
     if (!initial) track('settings_change', { quality: s.quality, time: s.timeOfDay });
   }
 
@@ -1187,6 +1472,7 @@ export class Game {
         run.stats.topKmh = Math.max(run.stats.topKmh, p.speedKmh);
         this.ghostRec.sample(run.stats.durationS, p);
         if (this.mission) this.updateMission(FIXED_DT, step, braking);
+        if (this.route) this.updateRoute();
         this.health.tick(FIXED_DT);
         const bonus = this.scoring.update(
           FIXED_DT,
@@ -1196,7 +1482,16 @@ export class Game {
           braking,
           p.yawRate,
         );
-        if (bonus) this.hud.popBonus(bonus.label, bonus.points, bonus.kind);
+        if (bonus)
+          this.hud.popBonus(
+            bonus.kind === 'corner'
+              ? t('bonus.corner')
+              : bonus.kind === 'speed'
+                ? t('bonus.speed')
+                : bonus.label,
+            bonus.points,
+            bonus.kind,
+          );
         this.handleContacts();
       }
       this.accumulator -= FIXED_DT;
@@ -1211,7 +1506,10 @@ export class Game {
     }
     if (run.phase === 'crashed' && run.sinceCrash >= CRASH_HOLD_S) run.finish();
     this.syncBikeTransform();
-    if (run.active || run.phase === 'countdown') this.ghost?.update(run.stats.durationS);
+    if (run.active || run.phase === 'countdown') {
+      this.ghost?.update(run.stats.durationS);
+      for (const g of this.others) g.update(run.stats.durationS);
+    }
 
     const gravelly = p.surface !== 'asphalt' && p.surface !== 'wet' ? 1 : 0;
     const roughness =
@@ -1330,7 +1628,9 @@ export class Game {
     this.summary.dispose();
     this.missionsPanel.dispose();
     this.garage.dispose();
+    this.routesPanel.dispose();
     this.photo.dispose();
+    this.clearOthers();
     this.post?.dispose();
     this.world.dispose();
     this.renderer.dispose();
@@ -1339,4 +1639,23 @@ export class Game {
 
 function freshLive(): MissionLive {
   return { score: 0, brakeTaps: 0, noBrakeM: 0, cleanM: 0, parcels: 0, currentCombo: 0 };
+}
+
+/** The current run's own samples as a Float32Array (round-trips through the serializer). */
+function deserializeOwn(rec: GhostRecorder): Float32Array | null {
+  try {
+    const b64 = rec.serialize();
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Float32Array(bytes.buffer);
+  } catch {
+    return null;
+  }
+}
+
+/** English indefinite article for the crash line; other languages ignore it. */
+function articled(noun: string): string {
+  if (getLang() !== 'en') return noun;
+  return `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;
 }

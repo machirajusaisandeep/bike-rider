@@ -62,12 +62,57 @@ export function deserializeGhost(b64: string): Float32Array | null {
 
 const GHOST_TINT = new Color(0x6fd3ff);
 
+export interface GhostSample {
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  lean: number;
+  /** m/s estimated from neighbouring samples. */
+  speed: number;
+}
+
+/** Interpolated sample at time `t`; returns false when `t` is past the end of the data. */
+export function sampleGhost(d: Float32Array, t: number, out: GhostSample): boolean {
+  const count = d.length / STRIDE;
+  if (count < 2) return false;
+  // binary search for the last sample with time <= t
+  let lo = 0;
+  let hi = count - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (d[mid * STRIDE]! <= t) lo = mid;
+    else hi = mid - 1;
+  }
+  const i = Math.min(lo, count - 2);
+  const a = i * STRIDE;
+  const b = (i + 1) * STRIDE;
+  const ta = d[a]!;
+  const tb = d[b]!;
+  if (t > tb + 0.5) return false;
+  const k = tb > ta ? Math.min(1, Math.max(0, (t - ta) / (tb - ta))) : 0;
+  const lerp = (o: number) => d[a + o]! + (d[b + o]! - d[a + o]!) * k;
+  let ha = d[a + 4]!;
+  let hb = d[b + 4]!;
+  if (hb - ha > Math.PI) hb -= Math.PI * 2;
+  else if (ha - hb > Math.PI) ha -= Math.PI * 2;
+  out.x = lerp(1);
+  out.y = lerp(2);
+  out.z = lerp(3);
+  out.heading = ha + (hb - ha) * k;
+  out.lean = lerp(5);
+  const dist = Math.hypot(d[b + 1]! - d[a + 1]!, d[b + 3]! - d[a + 3]!);
+  out.speed = tb > ta ? dist / (tb - ta) : 0;
+  return true;
+}
+
 export class GhostRider {
   readonly bike = new Bike();
   private data: Float32Array | null = null;
   private cursor = 0;
+  label = '';
 
-  constructor() {
+  constructor(tint: Color = GHOST_TINT) {
     const root: Object3D = this.bike.root;
     root.traverse((o) => {
       if ((o as Light).isLight) {
@@ -83,10 +128,10 @@ export class GhostRider {
         c.opacity = 0.32;
         c.depthWrite = false;
         if ((c as MeshStandardMaterial).color) {
-          (c as MeshStandardMaterial).color.lerp(GHOST_TINT, 0.55);
+          (c as MeshStandardMaterial).color.lerp(tint, 0.55);
         }
         if ((c as MeshStandardMaterial).emissive) {
-          (c as MeshStandardMaterial).emissive.copy(GHOST_TINT).multiplyScalar(0.25);
+          (c as MeshStandardMaterial).emissive.copy(tint).multiplyScalar(0.25);
         }
         return c;
       });
@@ -142,6 +187,10 @@ export class GhostRider {
 
   hide(): void {
     this.bike.root.visible = false;
+  }
+
+  dispose(): void {
+    this.bike.root.removeFromParent();
   }
 }
 

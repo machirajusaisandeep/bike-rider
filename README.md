@@ -1,7 +1,7 @@
 # Bike Rider
 
-Ride a Royal Enfield Scram 411 through six Indian landscapes in the browser. Suit up your rider,
-pick a road, then ride with WASD or the arrow keys.
+Ride a Royal Enfield Scram 411-inspired bike through six Indian landscapes in the browser. Suit up
+your rider, pick a road, then dodge autos, buses and cows for a score.
 
 |                                                       |                                                               |
 | ----------------------------------------------------- | ------------------------------------------------------------- |
@@ -10,7 +10,28 @@ pick a road, then ride with WASD or the arrow keys.
 | ![Varkala](docs/varkala.png) Varkala, cliff beach     | ![Bengaluru](docs/bengaluru.png) Bengaluru, ring road at dusk |
 
 _Screenshots show the real Scram 411 model loaded locally via `npm run fetch-model` (see asset
-provenance below)._
+provenance below). Public builds use the built-in procedural bike._
+
+## What you can do
+
+- **Ride** — the scored run. Seeded traffic (autos, hatchbacks, SUVs, trucks, buses, tankers,
+  scooters) and hazards (cows, goats, potholes, speed breakers, rocks, puddles, barrels). Pass
+  close for near-miss combos, hold speed for bonuses, take corners without braking. Your riding
+  gear's protection score decides how much each hit costs; run out of health and the run ends.
+- **Daily challenge** — everyone gets the same road, seed and traffic each day. Streaks, a daily
+  board, and other riders' ghosts alongside you when a backend is configured.
+- **Missions** — 48 objectives across the six roads in three tiers, paying coins and unlocking
+  weather and a bike.
+- **Routes** — Manali → Leh, Mysuru → Ooty, Kochi → Munnar and more, with checkpoint gates and
+  dhaba stops that restore health.
+- **Garage** — four upgrade tracks (engine, brakes, tyres, suspension) and four bikes bought
+  with coins.
+- **Free ride** — the original sandbox, no traffic, no score.
+- **Share** — a result card image, a replay-link with the seed, a photo mode with an orbit
+  camera, and a 10-second replay clip.
+- **Ghosts and leaderboards** — your best run replays as a translucent bike; scores go to a
+  Supabase board when configured, otherwise a local board.
+- UI in English, Hindi, Kannada, Tamil and Malayalam.
 
 ## Quick start
 
@@ -33,16 +54,17 @@ Browsers without WebGL get a fallback screen with troubleshooting steps instead 
 
 ## Controls
 
-| Action                                     | Keys              |
-| ------------------------------------------ | ----------------- |
-| Throttle                                   | `W` / `↑`         |
-| Brake, then reverse                        | `S` / `↓`         |
-| Steer                                      | `A` `D` / `←` `→` |
-| Quick brake                                | `Space`           |
-| Reset bike to the road                     | `R`               |
-| Cycle camera (Chase → Cockpit → Cinematic) | `C`               |
-| Pause                                      | `P`               |
-| Scene select                               | `Esc`             |
+| Action                                      | Keys              |
+| ------------------------------------------- | ----------------- |
+| Throttle                                    | `W` / `↑`         |
+| Brake, then reverse                         | `S` / `↓`         |
+| Steer                                       | `A` `D` / `←` `→` |
+| Quick brake                                 | `Space`           |
+| Reset bike to the road                      | `R`               |
+| Cycle camera (Chase → Cockpit → Cinematic)  | `C`               |
+| Pause (in a run) / Scene select (free ride) | `P` / `Esc`       |
+| Summary: retry / share / roads              | `R` / `S` / `Esc` |
+| Photo mode: capture / close                 | `Space` / `Esc`   |
 
 On touch devices, on-screen steer / gas / brake buttons appear automatically. They can be
 forced on or off in Settings.
@@ -260,3 +282,30 @@ can be dropped on GitHub Pages, Netlify, Vercel or any static host with no confi
 - Traffic, other riders, and checkpoints / a photo mode.
 - Gamepad support and haptics on mobile.
 - Post-processing (bloom for dusk headlights, motion blur at speed) behind the quality setting.
+
+## Configuration
+
+All optional. Without them the game runs fully offline with local boards.
+
+```
+VITE_SUPABASE_URL=            # leaderboards + shared ghosts (see supabase/schema.sql)
+VITE_SUPABASE_ANON_KEY=
+VITE_ANALYTICS_ENDPOINT=      # JSON events via sendBeacon; or add a Plausible/Umami script tag
+VITE_PORTAL=poki|crazygames   # portal SDK hooks (ads, gameplay events)
+VITE_PUBLIC_BUILD=1           # never reference the local RE model
+```
+
+See `docs/LAUNCH.md` for the deploy and submission checklist and `ROADMAP.md` for the plan.
+
+## Dev aids
+
+URL parameters: `?nomenu` `?mode=ride|daily|free` `?scene=munnar` `?seed=123` `?weather=rain`
+`?time=night` `?camera=cockpit` `?quality=low` `?perf` `?autodrive`.
+
+In dev builds `window.__bikeRider` exposes the game; `__bikeRider.advance(seconds, { auto: -1.2 })`
+fast-forwards a run with auto-steer at a lane offset, which is how the headless tests drive
+collisions without waiting for real frames.
+
+```bash
+npm test           # vitest: scoring, health, seeds, profile, missions, upgrades, road path
+```

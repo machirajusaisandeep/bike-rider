@@ -67,7 +67,7 @@ const en: Dict = {
   'bonus.missionDone': 'Mission complete · +{n} coins',
   // summary
   'sum.newBest': 'New best',
-  'sum.crash': 'Crashed into a {what}',
+  'sum.crash': 'Crashed into {what}',
   'sum.crashDetail': '{kmh} km/h impact · protection {p}/100',
   'sum.lost': 'Off the road',
   'sum.lostSea': 'Into the sea. Stay on the tarmac.',
@@ -91,6 +91,15 @@ const en: Dict = {
   'sum.free': 'Just cruise (free ride)',
   'sum.rideAs': 'Ride as',
   'sum.yourName': 'your name',
+  'sum.clip': 'Clip',
+  'sum.continue': 'Continue (watch an ad)',
+  'sum.arrived': 'Reached {to}!',
+  'sum.arrivedDetail': '{route} · route complete',
+  'menu.routes': 'Routes',
+  'route.next': '→ {name} · {m} m',
+  'route.dhaba': 'Chai break at {name} · +{n} health',
+  'route.pass': '{name} · {note}',
+  'route.finish': 'Arrived: {name}',
   // settings
   'set.title': 'Settings',
   'set.quality': 'Render quality',
@@ -106,7 +115,8 @@ const hi: Dict = {
   'menu.rider.title': 'अपना <em>राइडर</em> बनाएँ',
   'menu.rider.sub': 'चेहरा, बाल और राइडिंग गियर। जो पहनोगे, वही बचाएगा।',
   'menu.scene.title': '<em>Scram 411</em> पर भारत घूमो',
-  'menu.scene.sub': 'सड़क चुनो। चाय के पहाड़, हिमालय के दर्रे, घाट, समुद्र किनारे की चट्टान या शाम का शहर।',
+  'menu.scene.sub':
+    'सड़क चुनो। चाय के पहाड़, हिमालय के दर्रे, घाट, समुद्र किनारे की चट्टान या शाम का शहर।',
   'menu.step.rider': '1 राइडर',
   'menu.step.road': '2 सड़क',
   'menu.mode.ride': 'राइड',
@@ -184,7 +194,8 @@ const kn: Dict = {
   'menu.rider.title': 'ನಿಮ್ಮ <em>ರೈಡರ್</em> ರಚಿಸಿ',
   'menu.rider.sub': 'ಮುಖ, ಕೂದಲು ಮತ್ತು ರೈಡಿಂಗ್ ಗೇರ್. ಧರಿಸಿದ್ದೇ ರಕ್ಷಣೆ.',
   'menu.scene.title': '<em>Scram 411</em>ನಲ್ಲಿ ಭಾರತ ಸುತ್ತಿ',
-  'menu.scene.sub': 'ರಸ್ತೆ ಆರಿಸಿ. ಟೀ ಬೆಟ್ಟಗಳು, ಹಿಮಾಲಯದ ಪಾಸ್‌ಗಳು, ಘಾಟ್, ಸಮುದ್ರದ ಬಂಡೆ ಅಥವಾ ಸಂಜೆಯ ನಗರ.',
+  'menu.scene.sub':
+    'ರಸ್ತೆ ಆರಿಸಿ. ಟೀ ಬೆಟ್ಟಗಳು, ಹಿಮಾಲಯದ ಪಾಸ್‌ಗಳು, ಘಾಟ್, ಸಮುದ್ರದ ಬಂಡೆ ಅಥವಾ ಸಂಜೆಯ ನಗರ.',
   'menu.step.rider': '1 ರೈಡರ್',
   'menu.step.road': '2 ರಸ್ತೆ',
   'menu.mode.ride': 'ರೈಡ್',
@@ -262,7 +273,8 @@ const ta: Dict = {
   'menu.rider.title': 'உங்கள் <em>ரைடரை</em> உருவாக்குங்கள்',
   'menu.rider.sub': 'முகம், முடி, ரைடிங் கியர். அணிவதே பாதுகாப்பு.',
   'menu.scene.title': '<em>Scram 411</em>-இல் இந்தியா சுற்றுங்கள்',
-  'menu.scene.sub': 'சாலையைத் தேர்வு செய்யுங்கள். தேயிலை மலைகள், இமயமலைப் பாதைகள், காட்டு மலைச்சாலை, கடல் பாறை அல்லது மாலை நகரம்.',
+  'menu.scene.sub':
+    'சாலையைத் தேர்வு செய்யுங்கள். தேயிலை மலைகள், இமயமலைப் பாதைகள், காட்டு மலைச்சாலை, கடல் பாறை அல்லது மாலை நகரம்.',
   'menu.step.rider': '1 ரைடர்',
   'menu.step.road': '2 சாலை',
   'menu.mode.ride': 'ரைடு',
@@ -340,7 +352,8 @@ const ml: Dict = {
   'menu.rider.title': 'നിങ്ങളുടെ <em>റൈഡർ</em> ഉണ്ടാക്കൂ',
   'menu.rider.sub': 'മുഖം, മുടി, റൈഡിംഗ് ഗിയർ. ധരിക്കുന്നതാണ് സംരക്ഷണം.',
   'menu.scene.title': '<em>Scram 411</em>-ൽ ഇന്ത്യ ചുറ്റൂ',
-  'menu.scene.sub': 'റോഡ് തിരഞ്ഞെടുക്കൂ. തേയിലക്കുന്നുകൾ, ഹിമാലയൻ പാസ്, മഴക്കാട് ചുരം, കടൽത്തീര പാറ അല്ലെങ്കിൽ സന്ധ്യയിലെ നഗരം.',
+  'menu.scene.sub':
+    'റോഡ് തിരഞ്ഞെടുക്കൂ. തേയിലക്കുന്നുകൾ, ഹിമാലയൻ പാസ്, മഴക്കാട് ചുരം, കടൽത്തീര പാറ അല്ലെങ്കിൽ സന്ധ്യയിലെ നഗരം.',
   'menu.step.rider': '1 റൈഡർ',
   'menu.step.road': '2 റോഡ്',
   'menu.mode.ride': 'റൈഡ്',
@@ -358,7 +371,8 @@ const ml: Dict = {
   'menu.back': '← റൈഡർ & ഗിയർ',
   'menu.next': 'റോഡ് തിരഞ്ഞെടുക്കൂ',
   'menu.best': 'ബെസ്റ്റ് {n}',
-  'hud.hint.free': '<span class="key">W</span> അല്ലെങ്കിൽ <span class="key">↑</span> അമർത്തിപ്പിടിക്കൂ',
+  'hud.hint.free':
+    '<span class="key">W</span> അല്ലെങ്കിൽ <span class="key">↑</span> അമർത്തിപ്പിടിക്കൂ',
   'hud.hint.ride':
     '<span class="key">A</span><span class="key">D</span> തിരിക്കൂ · <span class="key">W</span> ഗ്യാസ് · അടുത്തുകൂടി കടന്ന് പോയിന്റ് നേടൂ',
   'hud.offroute': 'റോഡ് വിട്ടു · <b>R</b> അമർത്തൂ',

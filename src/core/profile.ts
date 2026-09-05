@@ -33,6 +33,7 @@ export interface Profile {
   bikes: string[];
   bike: string;
   missionsDone: string[];
+  routesDone: string[];
   unlocks: string[];
   onboarded: boolean;
 }
@@ -50,6 +51,7 @@ export const DEFAULT_PROFILE: Profile = {
   bikes: ['scram'],
   bike: 'scram',
   missionsDone: [],
+  routesDone: [],
   unlocks: [],
   onboarded: false,
 };

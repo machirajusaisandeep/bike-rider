@@ -1,5 +1,6 @@
 import type { RunStats } from '../game/Run';
 import { MODE_LABEL, type GameMode } from '../game/Run';
+import { t } from '../core/i18n';
 
 export interface SummaryData {
   mode: GameMode;
@@ -15,6 +16,10 @@ export interface SummaryData {
   streak?: number;
   /** Optional mission line. */
   mission?: { title: string; done: boolean; reward: number } | null;
+  /** Show a rewarded "continue" button (portal builds, after a crash). */
+  canContinue?: boolean;
+  /** Replay clip is possible (enough samples + MediaRecorder). */
+  canClip?: boolean;
 }
 
 export interface SummaryCallbacks {
@@ -23,6 +28,8 @@ export interface SummaryCallbacks {
   onMenu: () => void;
   onFreeRide: () => void;
   onPhoto: () => void;
+  onClip: () => void;
+  onContinue: () => void;
 }
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-IN');
@@ -41,6 +48,7 @@ export class Summary {
   private card: HTMLElement;
   private rankEl: HTMLElement;
   private shareBtn: HTMLButtonElement;
+  private clipBtn: HTMLButtonElement | null = null;
   private onKey = (e: KeyboardEvent) => {
     if (this.root.hidden) return;
     if (e.code === 'KeyR' || e.code === 'Space' || e.code === 'Enter') {
@@ -77,7 +85,7 @@ export class Summary {
     this.card.innerHTML = `
       <div class="summary-top">
         <span class="summary-mode">${MODE_LABEL[d.mode]} · ${d.sceneName}</span>
-        ${d.newBest ? '<span class="summary-best">New best</span>' : ''}
+        ${d.newBest ? `<span class="summary-best">${t('sum.newBest')}</span>` : ''}
         ${d.streak && d.streak > 1 ? `<span class="summary-streak">🔥 ${d.streak}-day streak</span>` : ''}
       </div>
       <div class="summary-cause">${d.cause}</div>
@@ -86,19 +94,19 @@ export class Summary {
       <div class="summary-sub">${
         d.newBest
           ? d.previousBest !== null
-            ? `Beat your ${fmt(d.previousBest)}`
-            : 'First score on this road'
+            ? t('sum.beat', { n: fmt(d.previousBest) })
+            : t('sum.first')
           : delta !== null
-            ? `${fmt(Math.abs(delta))} short of your best ${fmt(d.previousBest!)}`
+            ? t('sum.short', { d: fmt(Math.abs(delta)), n: fmt(d.previousBest!) })
             : ''
       }</div>
       <div class="summary-grid">
-        <div><b>${(s.distanceM / 1000).toFixed(2)}</b><span>km</span></div>
-        <div><b>${Math.round(s.topKmh)}</b><span>top km/h</span></div>
-        <div><b>${s.nearMisses}</b><span>near misses</span></div>
-        <div><b>×${Math.max(1, s.bestCombo)}</b><span>best combo</span></div>
-        <div><b>${Math.floor(s.durationS / 60)}:${String(Math.floor(s.durationS % 60)).padStart(2, '0')}</b><span>time</span></div>
-        <div><b>+${d.coins}</b><span>coins</span></div>
+        <div><b>${(s.distanceM / 1000).toFixed(2)}</b><span>${t('sum.km')}</span></div>
+        <div><b>${Math.round(s.topKmh)}</b><span>${t('sum.top')}</span></div>
+        <div><b>${s.nearMisses}</b><span>${t('sum.nearMisses')}</span></div>
+        <div><b>×${Math.max(1, s.bestCombo)}</b><span>${t('sum.combo')}</span></div>
+        <div><b>${Math.floor(s.durationS / 60)}:${String(Math.floor(s.durationS % 60)).padStart(2, '0')}</b><span>${t('sum.time')}</span></div>
+        <div><b>+${d.coins}</b><span>${t('sum.coins')}</span></div>
       </div>
       ${
         d.mission
@@ -107,16 +115,19 @@ export class Summary {
       }
       <div class="summary-rank" hidden></div>
       <div class="summary-actions">
-        <button type="button" class="btn-primary" data-action="retry">Ride again <span class="key">R</span></button>
-        <div class="summary-row">
-          <button type="button" class="btn-ghost" data-action="share">Share <span class="key">S</span></button>
-          <button type="button" class="btn-ghost" data-action="photo">Photo</button>
-          <button type="button" class="btn-ghost" data-action="menu">Roads <span class="key">Esc</span></button>
+        ${d.canContinue ? `<button type="button" class="btn-continue" data-action="continue">▶ ${t('sum.continue')}</button>` : ''}
+        <button type="button" class="btn-primary" data-action="retry">${t('sum.retry')} <span class="key">R</span></button>
+        <div class="summary-row ${d.canClip ? 'four' : ''}">
+          <button type="button" class="btn-ghost" data-action="share">${t('sum.share')} <span class="key">S</span></button>
+          ${d.canClip ? `<button type="button" class="btn-ghost" data-action="clip">${t('sum.clip')}</button>` : ''}
+          <button type="button" class="btn-ghost" data-action="photo">${t('sum.photo')}</button>
+          <button type="button" class="btn-ghost" data-action="menu">${t('sum.roads')} <span class="key">Esc</span></button>
         </div>
-        <button type="button" class="link-btn" data-action="free">Just cruise (free ride)</button>
+        <button type="button" class="link-btn" data-action="free">${t('sum.free')}</button>
       </div>`;
     this.rankEl = this.card.querySelector<HTMLElement>('.summary-rank')!;
     this.shareBtn = this.card.querySelector<HTMLButtonElement>('[data-action="share"]')!;
+    this.clipBtn = this.card.querySelector<HTMLButtonElement>('[data-action="clip"]');
     this.card.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((b) =>
       b.addEventListener('click', () => {
         const a = b.dataset.action;
@@ -125,6 +136,8 @@ export class Summary {
         else if (a === 'menu') this.cb.onMenu();
         else if (a === 'free') this.cb.onFreeRide();
         else if (a === 'photo') this.cb.onPhoto();
+        else if (a === 'clip') this.cb.onClip();
+        else if (a === 'continue') this.cb.onContinue();
       }),
     );
     this.root.hidden = false;
@@ -172,7 +185,7 @@ export class Summary {
     this.rankEl.innerHTML = `
       <div class="board-head">${head}</div>
       <ol class="board-list">${list}</ol>
-      <label class="board-handle">Ride as <input type="text" maxlength="16" value="${escapeHtml(o.handle)}" placeholder="your name" /></label>`;
+      <label class="board-handle">${t('sum.rideAs')} <input type="text" maxlength="16" value="${escapeHtml(o.handle)}" placeholder="${t('sum.yourName')}" /></label>`;
     this.rankEl.hidden = false;
     const input = this.rankEl.querySelector<HTMLInputElement>('input')!;
     input.addEventListener('keydown', (e) => e.stopPropagation());
@@ -181,6 +194,16 @@ export class Summary {
 
   setShareState(text: string): void {
     this.shareBtn.innerHTML = text;
+  }
+
+  setClipState(text: string): void {
+    if (this.clipBtn) this.clipBtn.innerHTML = text;
+  }
+
+  /** Re-show the same card after photo / clip without rebuilding it. */
+  reveal(): void {
+    this.root.hidden = false;
+    this.root.classList.add('open');
   }
 
   hide(): void {

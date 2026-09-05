@@ -2,6 +2,19 @@
 
 _Last updated: 2026-09-05. Companion to `PLAN.md` (which covers the original free-ride build)._
 
+## Status (2026-09-05)
+
+| Phase               | State                 | Notes                                                                                                                  |
+| ------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 0 Foundation        | **Done**              | Vitest, analytics sink, run state machine, seeds, perf chip, Pages workflow, public-build flag                         |
+| 1 Make it a game    | **Done**              | Traffic + hazards, collision, scoring/combos, health from gear, crash slide, summary, retry, onboarding hint           |
+| 2 Share and compete | **Done** (needs keys) | Result card, seed links, daily challenge + streaks, Supabase client + schema, ghosts. Set `VITE_SUPABASE_*` to go live |
+| 3 Retention         | **Done**              | 48 missions, coins + upgrades + bikes, monsoon/fog/snow, photo mode                                                    |
+| 4 Indian angle      | **Done** (v1)         | Six named routes with gates and dhabas, 5-language UI, replay clip, group-ride ghosts on the daily                     |
+| 5 Distribution      | **Ready**             | Portal SDK adapter (Poki / CrazyGames), itch zip script, OG tags, `docs/LAUNCH.md`. Submissions are a human step       |
+
+Not built yet: real-time multiplayer, open world, wheelies/horn (backlog by design).
+
 ## Where we are
 
 Bike Rider today is a polished free-ride sandbox: six Indian scenes, a real Scram 411 loaded
@@ -33,14 +46,14 @@ gated by a measurable outcome, not a feature count.
 
 **Goal:** the game can be deployed publicly, measured, and safely extended.
 
-| Item | Detail | Files |
-| --- | --- | --- |
-| Public deploy | Vercel or GitHub Pages from `dist/`. Confirm the procedural bike renders correctly when `public/models/` is absent (it is gitignored). Add a `PUBLIC_BUILD` env flag that skips the external model fetch entirely. | `vite.config.ts`, `src/game/Bike.ts`, `.github/workflows/` |
-| Analytics | Privacy-friendly events (Plausible or Umami, or PostHog free tier): `run_start`, `run_end{scene,score,distance,cause}`, `share`, `retry`. No cookies, no consent banner needed. | new `src/core/analytics.ts` |
-| Test harness | Vitest + `npm test`. First tests: `protectionFor`, `RoadPath.centerX` determinism, `seededRandom`. | `package.json`, `src/**/*.test.ts` |
-| Game mode plumbing | Introduce `GameMode = 'free' \| 'ride' \| 'daily'` and a `Run` state machine (`idle → countdown → riding → crashed → summary`). `Game.ts` currently mixes attract, pause and ride; the run state owns the loop's branching. | new `src/game/Run.ts`, `src/game/Game.ts` |
-| Seeded runs | Thread a `seed` into `World.load` and every procedural placement (vegetation already uses tile index; traffic will need it). | `src/world/World.ts`, `src/world/scenes.ts` |
-| Perf budget | Add a `?perf` overlay that logs draw calls, triangles, frame time. Fix anything that keeps Low quality below 30 fps on a throttled Chrome (4× CPU slowdown). | `src/game/Game.ts`, `src/ui/Hud.ts` |
+| Item               | Detail                                                                                                                                                                                                                      | Files                                                      |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Public deploy      | Vercel or GitHub Pages from `dist/`. Confirm the procedural bike renders correctly when `public/models/` is absent (it is gitignored). Add a `PUBLIC_BUILD` env flag that skips the external model fetch entirely.          | `vite.config.ts`, `src/game/Bike.ts`, `.github/workflows/` |
+| Analytics          | Privacy-friendly events (Plausible or Umami, or PostHog free tier): `run_start`, `run_end{scene,score,distance,cause}`, `share`, `retry`. No cookies, no consent banner needed.                                             | new `src/core/analytics.ts`                                |
+| Test harness       | Vitest + `npm test`. First tests: `protectionFor`, `RoadPath.centerX` determinism, `seededRandom`.                                                                                                                          | `package.json`, `src/**/*.test.ts`                         |
+| Game mode plumbing | Introduce `GameMode = 'free' \| 'ride' \| 'daily'` and a `Run` state machine (`idle → countdown → riding → crashed → summary`). `Game.ts` currently mixes attract, pause and ride; the run state owns the loop's branching. | new `src/game/Run.ts`, `src/game/Game.ts`                  |
+| Seeded runs        | Thread a `seed` into `World.load` and every procedural placement (vegetation already uses tile index; traffic will need it).                                                                                                | `src/world/World.ts`, `src/world/scenes.ts`                |
+| Perf budget        | Add a `?perf` overlay that logs draw calls, triangles, frame time. Fix anything that keeps Low quality below 30 fps on a throttled Chrome (4× CPU slowdown).                                                                | `src/game/Game.ts`, `src/ui/Hud.ts`                        |
 
 **Exit criteria:** public URL loads on a phone in < 3 s, analytics shows a `run_end` event, `npm test`
 passes in CI.
@@ -126,13 +139,13 @@ Files: new `src/ui/Summary.ts`, `src/game/Run.ts`.
 
 **Goal:** every run can leave the tab.
 
-| Feature | Design | Files |
-| --- | --- | --- |
-| Result card | Render a 1200×630 PNG on an OffscreenCanvas: scene still (from `public/previews`), score, distance, gear silhouette, seed link. Mobile: `navigator.share({ files })`. Desktop: copy image + link to clipboard. | new `src/share/Card.ts` |
-| Share links | `?scene=munnar&seed=8837124&mode=ride` reproduces the exact run. Already have `?scene=` parsing in `Game.ts`. | `src/game/Game.ts` |
-| Daily challenge | Seed = `YYYYMMDD` × scene index. One scene per day, rotating. Local streak counter. This is the Wordle mechanic and it works for racers. | `src/game/Run.ts`, `src/ui/Menu.ts` |
-| Leaderboards | Supabase (free tier) table `runs(id, mode, scene, seed, score, distance_m, top_kmh, near_misses, gear, name, country, created_at)`. Boards: all-time per scene, today's daily. Name is a 3–12 char handle, no accounts. Plausibility check in a Postgres function: `score ≤ distance_m × 6`, `distance_m ≤ duration_s × 34`. Rate-limit by IP via Supabase edge function. Accept that web leaderboards get gamed; keep the daily board as the honest one and reset it. | new `src/net/leaderboard.ts`, `supabase/` |
-| Ghost | Record `(t, x, z, heading, lean)` at 10 Hz, ≈ 900 samples per run, gzipped to localStorage; top-1 ghost per daily seed stored in Supabase Storage. Render as a translucent procedural bike. | new `src/game/Ghost.ts` |
+| Feature         | Design                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Files                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Result card     | Render a 1200×630 PNG on an OffscreenCanvas: scene still (from `public/previews`), score, distance, gear silhouette, seed link. Mobile: `navigator.share({ files })`. Desktop: copy image + link to clipboard.                                                                                                                                                                                                                                                         | new `src/share/Card.ts`                   |
+| Share links     | `?scene=munnar&seed=8837124&mode=ride` reproduces the exact run. Already have `?scene=` parsing in `Game.ts`.                                                                                                                                                                                                                                                                                                                                                          | `src/game/Game.ts`                        |
+| Daily challenge | Seed = `YYYYMMDD` × scene index. One scene per day, rotating. Local streak counter. This is the Wordle mechanic and it works for racers.                                                                                                                                                                                                                                                                                                                               | `src/game/Run.ts`, `src/ui/Menu.ts`       |
+| Leaderboards    | Supabase (free tier) table `runs(id, mode, scene, seed, score, distance_m, top_kmh, near_misses, gear, name, country, created_at)`. Boards: all-time per scene, today's daily. Name is a 3–12 char handle, no accounts. Plausibility check in a Postgres function: `score ≤ distance_m × 6`, `distance_m ≤ duration_s × 34`. Rate-limit by IP via Supabase edge function. Accept that web leaderboards get gamed; keep the daily board as the honest one and reset it. | new `src/net/leaderboard.ts`, `supabase/` |
+| Ghost           | Record `(t, x, z, heading, lean)` at 10 Hz, ≈ 900 samples per run, gzipped to localStorage; top-1 ghost per daily seed stored in Supabase Storage. Render as a translucent procedural bike.                                                                                                                                                                                                                                                                            | new `src/game/Ghost.ts`                   |
 
 **Exit criteria:** ≥ 5 % of finished runs trigger a share; daily board has ≥ 50 entries a day
 after launch week.
@@ -147,9 +160,13 @@ after launch week.
 
 ```ts
 interface Mission {
-  id: string; scene: SceneId; title: string;
+  id: string;
+  scene: SceneId;
+  title: string;
   type: 'distance' | 'nearMisses' | 'noBrake' | 'timeTrial' | 'deliver' | 'topSpeed' | 'survive';
-  target: number; reward: number; unlocks?: string;
+  target: number;
+  reward: number;
+  unlocks?: string;
 }
 ```
 
@@ -212,14 +229,14 @@ No popular riding game does India well. This is the wedge.
 
 A hit is mostly distribution. Features only make distribution possible.
 
-| Channel | What it needs from us |
-| --- | --- |
-| **Poki / CrazyGames** | Score + retry loop, mobile controls, load < 5 MB initial, no external links, SDK hooks: `gameplayStart/Stop`, `commercialBreak` at run end, `rewardedBreak` for a continue. Both reject games without a fail state. Submit after Phase 1. |
-| **itch.io** | Zip of `dist/`, three GIFs, one paragraph. Same day as Phase 1 ships. |
-| **Reddit** | r/WebGames, r/indianbikes, r/RoyalEnfield, r/india_gaming, r/bangalore. Post a 15 s clip, not a link; link in comments. Best times: Sat/Sun IST evening. |
-| **Hacker News** | "Show HN: A Three.js riding game through Indian hill roads" once the daily challenge exists. HN likes technical depth: procedural terrain, 6 kLOC, no engine. |
-| **Instagram / YouTube Shorts** | Photo-mode stills and clips; RE and touring communities live here. |
-| **RE outreach** | Once traction exists, approach Royal Enfield with numbers for an official model licence. Until then the game is "inspired by". |
+| Channel                        | What it needs from us                                                                                                                                                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Poki / CrazyGames**          | Score + retry loop, mobile controls, load < 5 MB initial, no external links, SDK hooks: `gameplayStart/Stop`, `commercialBreak` at run end, `rewardedBreak` for a continue. Both reject games without a fail state. Submit after Phase 1. |
+| **itch.io**                    | Zip of `dist/`, three GIFs, one paragraph. Same day as Phase 1 ships.                                                                                                                                                                     |
+| **Reddit**                     | r/WebGames, r/indianbikes, r/RoyalEnfield, r/india_gaming, r/bangalore. Post a 15 s clip, not a link; link in comments. Best times: Sat/Sun IST evening.                                                                                  |
+| **Hacker News**                | "Show HN: A Three.js riding game through Indian hill roads" once the daily challenge exists. HN likes technical depth: procedural terrain, 6 kLOC, no engine.                                                                             |
+| **Instagram / YouTube Shorts** | Photo-mode stills and clips; RE and touring communities live here.                                                                                                                                                                        |
+| **RE outreach**                | Once traction exists, approach Royal Enfield with numbers for an official model licence. Until then the game is "inspired by".                                                                                                            |
 
 ---
 
@@ -227,13 +244,13 @@ A hit is mostly distribution. Features only make distribution possible.
 
 Instrument these from Phase 0:
 
-| Metric | Phase 1 target | Phase 3 target |
-| --- | --- | --- |
-| Runs per session (median) | ≥ 3 | ≥ 5 |
-| First-run completion | ≥ 60 % | ≥ 70 % |
-| Share rate (shares ÷ finished runs) | — | ≥ 5 % |
-| D1 / D7 retention | — | 20 % / 6 % |
-| Median load to first frame (mobile) | < 3 s | < 2.5 s |
+| Metric                              | Phase 1 target | Phase 3 target |
+| ----------------------------------- | -------------- | -------------- |
+| Runs per session (median)           | ≥ 3            | ≥ 5            |
+| First-run completion                | ≥ 60 %         | ≥ 70 %         |
+| Share rate (shares ÷ finished runs) | —              | ≥ 5 %          |
+| D1 / D7 retention                   | —              | 20 % / 6 %     |
+| Median load to first frame (mobile) | < 3 s          | < 2.5 s        |
 
 ---
 
