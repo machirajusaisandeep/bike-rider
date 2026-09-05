@@ -1,11 +1,19 @@
 import {
+  BEARDS,
+  FACES,
   GEAR_BY_ID,
+  HAIR,
+  HAIR_COLORS,
+  HAIR_NAMES,
+  SKIN_TONES,
   SLOTS,
   SLOT_LABEL,
   ZONE_CAP,
   ZONE_LABEL,
   itemsFor,
   protectionFor,
+  riderForBody,
+  type BeardStyle,
   type BodyType,
   type RiderConfig,
   type Zone,
@@ -13,6 +21,7 @@ import {
 import { SCENES, type SceneDef, type SceneId } from '../world/scenes';
 
 export type MenuStep = 'rider' | 'scene';
+export type RiderTab = 'face' | 'hair' | 'gear';
 
 export interface MenuCallbacks {
   /** Rider body / gear changed: update the 3D rider live. */
@@ -21,6 +30,8 @@ export interface MenuCallbacks {
   onPreview: (id: SceneId) => void;
   onStart: (id: SceneId) => void;
   onStepChange: (step: MenuStep) => void;
+  /** Character tab changed: the camera frames the head for face/hair, full body for gear. */
+  onFocus: (tab: RiderTab) => void;
 }
 
 const ICON: Record<SceneDef['category'], string> = {
@@ -96,6 +107,7 @@ export class Menu {
     this.rider = structuredClone(rider);
     this.root = document.createElement('div');
     this.root.className = 'menu';
+    this.root.hidden = true;
     this.root.innerHTML = `
       <div class="menu-scrim"></div>
       <div class="menu-body">
@@ -137,41 +149,99 @@ export class Menu {
     this.scenePanel = this.root.querySelector<HTMLElement>('.panel-scene')!;
     this.titleEl = this.root.querySelector<HTMLElement>('.menu-title')!;
 
-    // ---- rider panel ------------------------------------------------------------------
+    // ---- rider panel (character creator) -------------------------------------------------
     this.riderPanel.innerHTML = `
-      <div class="rider-cols">
-        <div class="rider-left">
-          <div class="row-label">Rider</div>
-          <div class="seg seg-body">
-            <button type="button" class="seg-btn" data-body="male">Male</button>
-            <button type="button" class="seg-btn" data-body="female">Female</button>
+      <div class="char">
+        <div class="char-panel">
+          <div class="char-tabs" role="tablist">
+            <button type="button" class="char-tab active" data-tab="face">Face</button>
+            <button type="button" class="char-tab" data-tab="hair">Hair</button>
+            <button type="button" class="char-tab" data-tab="gear">Riding gear</button>
           </div>
-          <div class="gear-list"></div>
+          <div class="char-page" data-page="face">
+            <div class="char-label">Face</div>
+            <div class="thumb-grid faces"></div>
+            <div class="char-label">Skin tone</div>
+            <div class="swatches skins"></div>
+            <div class="beard-row"><div class="char-label">Beard</div><div class="seg seg-beard"></div></div>
+          </div>
+          <div class="char-page" data-page="hair" hidden>
+            <div class="char-label">Hair</div>
+            <div class="thumb-grid hairs"></div>
+            <div class="char-label">Hair colour</div>
+            <div class="swatches hair-colors"></div>
+          </div>
+          <div class="char-page" data-page="gear" hidden>
+            <div class="gear-list"></div>
+          </div>
+          <div class="char-foot">
+            <div class="seg seg-body">
+              <button type="button" class="seg-btn" data-body="male"><svg viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M14 10l6-6M15 4h5v5"/></svg>Male</button>
+              <button type="button" class="seg-btn" data-body="female"><svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>Female</button>
+            </div>
+            <div class="char-score" title="Protection score from riding gear">
+              <svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>
+              <b class="protect-num">0</b><span>/100</span>
+              <i class="protect-exposed"></i>
+            </div>
+            <button type="button" class="btn-primary btn-next">Choose a road <span class="key">↵</span></button>
+          </div>
         </div>
-        <aside class="rider-right">
-          <div class="protect-card">
+        <aside class="char-side">
+          <div class="protect-card compact">
             <div class="protect-head">
-              <div>
-                <div class="row-label">Protection score</div>
-                <div class="protect-score"><span class="protect-num">0</span><span class="protect-den">/100</span></div>
-              </div>
               ${BODY_SVG}
+              <ul class="zone-list"></ul>
             </div>
             <div class="protect-bar"><div class="protect-fill"></div></div>
-            <ul class="zone-list"></ul>
-            <div class="protect-exposed"></div>
-            <p class="protect-note">Each piece of gear covers body zones. Uncovered zones take full damage once the health bar lands, so a helmet plus gloves plus shoes still leaves your torso and knees exposed.</p>
           </div>
-          <button type="button" class="btn-primary btn-next">Choose a road <span class="key">↵</span></button>
         </aside>
       </div>`;
+    const base = import.meta.env.BASE_URL;
+    this.riderPanel
+      .querySelectorAll<HTMLButtonElement>('.char-tab')
+      .forEach((b) => b.addEventListener('click', () => this.setTab(b.dataset.tab as RiderTab)));
     this.riderPanel.querySelectorAll<HTMLButtonElement>('[data-body]').forEach((b) =>
       b.addEventListener('click', () => {
-        this.rider.body = b.dataset.body as BodyType;
+        if (this.rider.body === b.dataset.body) return;
+        this.rider = riderForBody(this.rider, b.dataset.body as BodyType);
+        this.buildThumbGrids(base);
         this.renderRider();
         this.cb.onRiderChange(structuredClone(this.rider));
       }),
     );
+    const skins = this.riderPanel.querySelector<HTMLElement>('.skins')!;
+    for (const t of SKIN_TONES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.dataset.skin = t.id;
+      b.style.background = t.hex;
+      b.title = 'Skin tone';
+      b.addEventListener('click', () => this.change({ skin: t.id }));
+      skins.appendChild(b);
+    }
+    const hcs = this.riderPanel.querySelector<HTMLElement>('.hair-colors')!;
+    for (const c of HAIR_COLORS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.dataset.hairColor = c.id;
+      b.style.background = c.hex;
+      b.addEventListener('click', () => this.change({ hairColor: c.id }));
+      hcs.appendChild(b);
+    }
+    const beardSeg = this.riderPanel.querySelector<HTMLElement>('.seg-beard')!;
+    for (const bd of BEARDS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seg-btn';
+      b.dataset.beard = bd;
+      b.textContent = bd === 'none' ? 'Clean' : bd === 'stubble' ? 'Stubble' : 'Full';
+      b.addEventListener('click', () => this.change({ beard: bd as BeardStyle }));
+      beardSeg.appendChild(b);
+    }
+    this.buildThumbGrids(base);
     const list = this.riderPanel.querySelector<HTMLElement>('.gear-list')!;
     for (const slot of SLOTS) {
       const row = document.createElement('div');
@@ -253,24 +323,91 @@ export class Menu {
     this.step = step;
     this.riderPanel.hidden = step !== 'rider';
     this.scenePanel.hidden = step !== 'scene';
+    this.root.classList.toggle('step-rider', step === 'rider');
+    this.root.classList.toggle('step-scene', step === 'scene');
     this.stepDots.forEach((d) => d.classList.toggle('active', d.dataset.step === step));
     const sub = this.root.querySelector<HTMLElement>('.menu-sub')!;
     if (step === 'rider') {
-      this.titleEl.innerHTML = 'Suit up for the <em>ride</em>';
-      sub.textContent = 'Choose your rider and riding gear. What you wear is what protects you.';
+      this.titleEl.innerHTML = 'Create your <em>rider</em>';
+      sub.textContent = 'Face, hair and riding gear. What you wear is what protects you.';
     } else {
       this.titleEl.innerHTML = 'Ride India on a <em>Scram 411</em>';
       sub.textContent =
         'Pick a road. Tea hills, Himalayan passes, rainforest ghats, a cliff above the sea or the city at dusk.';
     }
     if (notify) this.cb.onStepChange(step);
+    if (notify && step === 'rider') this.cb.onFocus(this.tab);
   }
 
   get currentStep(): MenuStep {
     return this.step;
   }
 
+  get currentTab(): RiderTab {
+    return this.tab;
+  }
+
+  private tab: RiderTab = 'face';
+
+  setTab(tab: RiderTab): void {
+    this.tab = tab;
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('.char-tab')
+      .forEach((t) => t.classList.toggle('active', t.dataset.tab === tab));
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('.char-page')
+      .forEach((p) => (p.hidden = p.dataset.page !== tab));
+    this.cb.onFocus(tab);
+  }
+
+  private change(patch: Partial<RiderConfig>): void {
+    Object.assign(this.rider, patch);
+    this.renderRider();
+    this.cb.onRiderChange(structuredClone(this.rider));
+  }
+
+  private buildThumbGrids(base: string): void {
+    const faces = this.riderPanel.querySelector<HTMLElement>('.faces')!;
+    faces.innerHTML = '';
+    for (const f of FACES[this.rider.body]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'thumb';
+      b.dataset.face = f.id;
+      b.innerHTML = `<img src="${base}previews/rider/face_${this.rider.body}_${f.id}.png" alt="${f.name}" loading="lazy"/><span>${f.name}</span>`;
+      b.addEventListener('click', () => this.change({ face: f.id }));
+      faces.appendChild(b);
+    }
+    const hairs = this.riderPanel.querySelector<HTMLElement>('.hairs')!;
+    hairs.innerHTML = '';
+    for (const h of HAIR[this.rider.body]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'thumb';
+      b.dataset.hair = h;
+      b.innerHTML = `<img src="${base}previews/rider/hair_${this.rider.body}_${h}.png" alt="${HAIR_NAMES[h]}" loading="lazy"/><span>${HAIR_NAMES[h] ?? h}</span>`;
+      b.addEventListener('click', () => this.change({ hair: h }));
+      hairs.appendChild(b);
+    }
+    this.riderPanel.querySelector<HTMLElement>('.beard-row')!.hidden = this.rider.body !== 'male';
+  }
+
   private renderRider(): void {
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('[data-face]')
+      .forEach((b) => b.classList.toggle('active', b.dataset.face === this.rider.face));
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('[data-hair]')
+      .forEach((b) => b.classList.toggle('active', b.dataset.hair === this.rider.hair));
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('[data-skin]')
+      .forEach((b) => b.classList.toggle('active', b.dataset.skin === this.rider.skin));
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('[data-hair-color]')
+      .forEach((b) => b.classList.toggle('active', b.dataset.hairColor === this.rider.hairColor));
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('[data-beard]')
+      .forEach((b) => b.classList.toggle('active', b.dataset.beard === this.rider.beard));
     this.riderPanel
       .querySelectorAll<HTMLButtonElement>('[data-body]')
       .forEach((b) => b.classList.toggle('active', b.dataset.body === this.rider.body));
@@ -306,8 +443,8 @@ export class Menu {
             : 'rgba(255,180,40,0.75)';
     });
     this.exposedEl.textContent = p.exposed.length
-      ? `Exposed: ${p.exposed.map((z) => ZONE_LABEL[z].toLowerCase()).join(', ')}`
-      : 'Fully covered. Ride safe.';
+      ? `exposed: ${p.exposed.map((z) => ZONE_LABEL[z].toLowerCase()).join(', ')}`
+      : 'fully covered';
     this.exposedEl.classList.toggle('ok', p.exposed.length === 0);
   }
 

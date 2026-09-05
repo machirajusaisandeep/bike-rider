@@ -1,0 +1,64 @@
+{
+  "faces": {
+    "male": [
+      { "id": "arjun", "name": "Arjun", "morphs": {} },
+      { "id": "vikram", "name": "Vikram", "morphs": { "jaw_wide": 1.0, "brow_heavy": 0.6 } },
+      { "id": "rahul", "name": "Rahul", "morphs": { "cheeks_full": 0.9, "chin_long": 0.3 } },
+      { "id": "dev", "name": "Dev", "morphs": { "nose_big": 0.9, "jaw_narrow": 0.5 } },
+      {
+        "id": "kabir",
+        "name": "Kabir",
+        "morphs": { "brow_heavy": 1.0, "jaw_wide": 0.5, "chin_long": 0.7 }
+      },
+      {
+        "id": "ishaan",
+        "name": "Ishaan",
+        "morphs": { "jaw_narrow": 0.8, "cheeks_full": 0.3, "nose_big": 0.3 }
+      }
+    ],
+    "female": [
+      { "id": "ananya", "name": "Ananya", "morphs": {} },
+      { "id": "meera", "name": "Meera", "morphs": { "cheeks_full": 0.9 } },
+      { "id": "diya", "name": "Diya", "morphs": { "jaw_narrow": 0.8, "chin_long": 0.5 } },
+      { "id": "riya", "name": "Riya", "morphs": { "brow_heavy": 0.5, "nose_big": 0.6 } },
+      { "id": "sana", "name": "Sana", "morphs": { "jaw_wide": 0.7, "cheeks_full": 0.3 } },
+      {
+        "id": "kavya",
+        "name": "Kavya",
+        "morphs": { "chin_long": 0.6, "cheeks_full": 0.5, "nose_big": 0.3 }
+      }
+    ]
+  },
+  "hair": {
+    "male": ["crop", "buzz", "side", "quiff", "curly", "long", "bald"],
+    "female": ["long", "ponytail", "bun", "side", "crop", "curly", "buzz"]
+  },
+  "hairNames": {
+    "crop": "Crop",
+    "buzz": "Buzz cut",
+    "side": "Side part",
+    "quiff": "Quiff",
+    "curly": "Curly",
+    "long": "Long",
+    "ponytail": "Ponytail",
+    "bun": "Bun",
+    "bald": "Shaved"
+  },
+  "hairColors": [
+    { "id": "black", "hex": "#15110f" },
+    { "id": "darkbrown", "hex": "#2e1f16" },
+    { "id": "brown", "hex": "#5a3a24" },
+    { "id": "auburn", "hex": "#7a3b22" },
+    { "id": "grey", "hex": "#8d8a86" },
+    { "id": "blonde", "hex": "#b48a4e" }
+  ],
+  "skinTones": [
+    { "id": "s1", "hex": "#f1c9a5" },
+    { "id": "s2", "hex": "#dfae86" },
+    { "id": "s3", "hex": "#c8916a" },
+    { "id": "s4", "hex": "#a9714c" },
+    { "id": "s5", "hex": "#8a5a3a" },
+    { "id": "s6", "hex": "#5e3b25" }
+  ],
+  "beards": ["none", "stubble", "full"]
+}

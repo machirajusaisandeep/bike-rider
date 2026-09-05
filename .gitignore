@@ -4,7 +4,6 @@ dist
 *.local
 .vite
 
-# Royal Enfield model + Draco decoder are fetched locally via `npm run fetch-model`
-# and intentionally not committed (see README "asset provenance").
-public/models/
-public/draco/
+# Royal Enfield model is fetched locally via `npm run fetch-model` and intentionally not
+# committed (see README "asset provenance"). Rider GLBs (CC0-derived) are committed.
+public/models/scram411.glb

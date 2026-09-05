@@ -74,8 +74,14 @@ Arcade handling, not a physics engine (`src/game/BikePhysics.ts`):
 
 ![Rider and gear screen](docs/rider-gear.png)
 
-Before the road you build your rider: male or female body, then one item per slot from a
-catalogue that follows Royal Enfield's riding-gear lines:
+The first screen is a character creator. Pick a male or female rider, then:
+
+- **Face**: six presets per body (Arjun, Vikram, Rahul, Dev, Kabir, Ishaan / Ananya, Meera, Diya,
+  Riya, Sana, Kavya), each a blend of morph targets (jaw width, chin length, nose, cheeks,
+  brow), six skin tones, and for men a clean / stubble / full beard.
+- **Hair**: crop, buzz, side part, quiff, curly, long, ponytail, bun or shaved, in six colours.
+- **Riding gear**: one item per slot from a catalogue that follows Royal Enfield's riding-gear
+  lines.
 
 | Slot         | Options (points)                                                                                               |
 | ------------ | -------------------------------------------------------------------------------------------------------------- |
@@ -88,18 +94,45 @@ catalogue that follows Royal Enfield's riding-gear lines:
 
 **Protection score** (`src/game/gear.ts`) is the sum of covered body zones, capped per zone:
 head 30, torso 20, arms 10, hands 10, knees 18, feet 12, total 100. Items that cover the same
-zone do not stack past the cap. The gear screen shows the score, a body map tinted by coverage
-and the list of exposed zones, e.g. helmet + gloves + shoes = 41/100 with torso, arms and knees
-exposed. The in-ride HUD shows the score as a shield chip. This is the input for the upcoming
-health bar: damage to an uncovered zone will hurt more.
+zone do not stack past the cap. The screen shows the score, a body map tinted by coverage and
+the exposed zones, e.g. helmet + gloves + shoes = 41/100 with torso, arms and knees exposed.
+The in-ride HUD shows the score as a shield chip. This is the input for the upcoming health
+bar: damage to an uncovered zone will hurt more.
 
-The rider (`src/game/Rider.ts`) is a procedural low-poly figure seated on the bike, hands on the
-bars, feet on the pegs, leaning with the bike. Gear is drawn as extra shells, so what you pick
-is what you see riding: helmet type and livery, jacket colour with shoulder and elbow cups,
-gauntlets, hard-shell knee guards, boot height. Product names reference Royal Enfield's
-catalogue; the visuals are original stand-ins, not their product imagery.
+### How the rider is made
 
-![Full gear rider](docs/rider-full-gear.png)
+The rider meshes are derived from Blender Studio's **Human Base Meshes** bundle (CC0,
+https://studio.blender.org/), built by `scripts/blender/build_rider.py` running headless in
+Blender 5.x:
+
+1. Take the realistic male / female body and eyes, auto-rig a 19-bone armature placed from
+   measured landmarks (shoulders 0.83 H, elbows 0.645 H, wrists 0.535 H, hips 0.54 H, knees
+   0.28 H, ankles 0.05 H).
+2. Add face shape keys, exported as glTF morph targets so presets blend live in the browser.
+3. Extract body regions into fitted shells that inherit the skin weights: hair styles, brows,
+   beards, and every gear item (helmets with visor, jackets with collar / shoulder cups / back
+   plate, short and gauntlet gloves, knee sleeves and hard shells with shin plate, three boot
+   heights). Shirt and jeans are painted as material regions of the body itself.
+4. Bake `Stand` and `Ride` poses as single-frame clips and export a Draco GLB per body
+   (`public/models/rider_male.glb`, `rider_female.glb`, ~1.7 MB each). Face and hair thumbnails
+   for the grid are rendered with Workbench into `public/previews/rider/`.
+
+To rebuild after changing the script or presets (`src/game/rider-presets.json`):
+
+```bash
+# download and unzip https://download.blender.org/demo/asset-bundles/human-base-meshes/ (v1.4.1)
+/Applications/Blender.app/Contents/MacOS/Blender -b human_base_meshes_bundle.blend \
+  --python scripts/blender/build_rider.py -- male public/models/rider_male.glb \
+  src/game/rider-presets.json public/previews/rider
+```
+
+`scripts/blender/check_pose.py` renders a GLB in both poses for a quick visual check. In the
+browser, `src/game/Rider.ts` loads the GLB, toggles shells, sets morph influences and material
+colours, and switches between the standing pose (character screen) and the riding pose.
+
+![Riding gear tab](docs/rider-full-gear.png)
+
+![Rider on the bike](docs/ride-rider.png)
 
 ## Scenes and world
 
@@ -192,7 +225,7 @@ work without renaming nodes.
 URL parameters (development only):
 
 - `?scene=munnar|ladakh|wayanad|ooty|varkala|bengaluru` picks a scene; `?nomenu` skips the menu; `?step=scene` opens the menu on the road step.
-- `?rider=male|female&gear=streetwind-full,explorer-v3,...` previews a loadout; `?closeup` orbits close to the rider.
+- `?rider=male|female&face=kabir&hair=side&skin=s4&beard=stubble&gear=streetwind-full,explorer-v3,...` previews a rider; `?tab=gear` opens that creator tab; `?closeup` orbits close to the rider.
 - `?quality=low|medium|high` overrides the stored quality.
 - `?autodrive` pins the throttle and follows the road, handy for screenshots and perf checks.
 - In dev builds the game instance is exposed as `window.__bikeRider`.
@@ -205,11 +238,12 @@ src/
   main.ts            WebGL detection, fallback screen, lazy-loads the game
   style.css          HUD, overlays, touch controls, fallback
   core/              config (tuning), settings persistence, input, WebGL probe
-  game/              Game loop, Bike model, Rider + gear catalogue, BikePhysics, ChaseCamera, EngineAudio
+  game/              Game loop, Bike model, Rider (GLB), gear catalogue + presets, BikePhysics, ChaseCamera, EngineAudio
   world/             scenes, heights, Terrain, Road, Vegetation, Ocean, City, Atmosphere, Dust
   postfx/            EffectComposer pipeline
   ui/                Hud (in-ride overlay), Menu (rider + gear, scene select)
-scripts/fetch-model.mjs   downloads the Scram 411 GLB + Draco decoder (gitignored output)
+scripts/fetch-model.mjs   downloads the Scram 411 GLB (gitignored) + Draco decoder
+scripts/blender/          build_rider.py (bundle -> rigged rider GLBs), check_pose.py
 public/previews/          scene thumbnails for the menu
 ```
 
@@ -221,7 +255,8 @@ can be dropped on GitHub Pages, Netlify, Vercel or any static host with no confi
 ## Roadmap
 
 - Health bar driven by the protection score: crashes and off-road hits damage exposed zones.
-- Rider figure; ask Royal Enfield about licensing the model for a public deployment.
+- Ask Royal Enfield about licensing the bike model for a public deployment.
+- Rider: idle animation on the character screen, cloth wrinkles / normal maps, more hair styles.
 - Traffic, other riders, and checkpoints / a photo mode.
 - Gamepad support and haptics on mobile.
 - Post-processing (bloom for dusk headlights, motion blur at speed) behind the quality setting.

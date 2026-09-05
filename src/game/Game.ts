@@ -29,7 +29,7 @@ import { Dust } from '../world/Dust';
 import { isSceneId, type SceneId } from '../world/scenes';
 import { World } from '../world/World';
 import { Bike, loadExternalBike } from './Bike';
-import { GEAR_BY_ID, protectionFor, type RiderConfig } from './gear';
+import { FACES, GEAR_BY_ID, HAIR, protectionFor, sanitizeRider, type RiderConfig } from './gear';
 import { Rider } from './Rider';
 import { BikePhysics } from './BikePhysics';
 import { ChaseCamera } from './ChaseCamera';
@@ -98,6 +98,12 @@ export class Game {
     if (riderParam || gearParam !== null) {
       const cfg = structuredClone(this.settings.rider);
       if (riderParam === 'male' || riderParam === 'female') cfg.body = riderParam;
+      const face = this.params.get('face');
+      if (face && FACES[cfg.body].some((f) => f.id === face)) cfg.face = face;
+      const hair = this.params.get('hair');
+      if (hair && HAIR[cfg.body].includes(hair)) cfg.hair = hair;
+      if (this.params.get('skin')) cfg.skin = this.params.get('skin')!;
+      if (this.params.get('beard')) cfg.beard = this.params.get('beard') as RiderConfig['beard'];
       if (gearParam !== null) {
         for (const slot of Object.keys(cfg.gear) as (keyof typeof cfg.gear)[])
           cfg.gear[slot] = null;
@@ -106,7 +112,7 @@ export class Game {
           if (item) cfg.gear[item.slot] = id;
         }
       }
-      this.settings.rider = cfg;
+      this.settings.rider = sanitizeRider(cfg);
     }
     const qParam = this.params.get('quality');
     if (qParam === 'low' || qParam === 'medium' || qParam === 'high')
@@ -132,7 +138,8 @@ export class Game {
     this.physics.heightAt = this.world.heightAt;
     this.chase.heightAt = this.world.heightAt;
     this.scene.add(this.bike.root);
-    this.bike.lean.add(this.rider.root);
+    this.seatRider();
+    this.rider.onLoaded = () => this.hud.setStatus(null);
     this.applyRider(this.settings.rider, false);
     this.dust = new Dust(this.renderer.getPixelRatio());
     this.scene.add(this.dust.points);
@@ -152,7 +159,8 @@ export class Game {
       onRiderChange: (cfg) => this.applyRider(cfg, true),
       onPreview: (id) => this.switchScene(id),
       onStart: (id) => this.startRide(id),
-      onStepChange: (step) => this.chase.setCloseUp(step === 'rider'),
+      onStepChange: (step) => this.onMenuStep(step),
+      onFocus: (tab) => this.focusRider(tab),
     });
 
     this.input.on('KeyR', () => !this.attract && this.reset());
@@ -176,7 +184,12 @@ export class Game {
     if (skipMenu) {
       this.menu.hide();
       if (this.params.has('closeup')) this.chase.setCloseUp(true);
-    } else this.openMenu(this.params.get('step') === 'scene' ? 'scene' : 'rider');
+    } else {
+      this.openMenu(this.params.get('step') === 'scene' ? 'scene' : 'rider');
+      const tabParam = this.params.get('tab');
+      if (tabParam === 'face' || tabParam === 'hair' || tabParam === 'gear')
+        this.menu.setTab(tabParam);
+    }
 
     this.clock.start();
     this.raf = requestAnimationFrame(this.frame);
@@ -232,9 +245,67 @@ export class Game {
     this.hud.setMenuOpen(true);
     this.savedCamera = this.settings.cameraMode;
     this.chase.setMode('cinematic');
-    this.chase.setCloseUp(step === 'rider');
     this.menu.select(this.settings.scene, false);
     this.menu.show(step);
+    this.onMenuStep(step);
+  }
+
+  /** Rider step: bike parked, rider standing beside it under a fixed camera. Scene step: attract cruise. */
+  private onMenuStep(step: 'rider' | 'scene'): void {
+    if (step === 'rider') {
+      this.reset();
+      this.standRider();
+      this.focusRider(this.menu.currentTab);
+    } else {
+      this.seatRider();
+      this.chase.setFocus(null);
+      this.chase.setCloseUp(false);
+      this.chase.resetSmoothing();
+    }
+  }
+
+  private riderStanding = false;
+
+  private standRider(): void {
+    const p = this.physics;
+    // Stand 1.4 m to the rider's right of the parked bike, facing the camera side.
+    const right = new Vector3(-p.forward.z, 0, p.forward.x);
+    const pos = p.position.clone().addScaledVector(right, 1.5).addScaledVector(p.forward, -0.2);
+    pos.y = this.world.heightAt(pos.x, pos.z);
+    this.scene.add(this.rider.root);
+    this.rider.root.position.copy(pos);
+    this.rider.root.rotation.set(0, p.heading + Math.PI / 2 + 0.35, 0);
+    this.rider.root.scale.setScalar(1);
+    this.rider.setPose('stand');
+    this.riderStanding = true;
+  }
+
+  private seatRider(): void {
+    this.rider.setShowHelmet(true);
+    this.bike.lean.add(this.rider.root);
+    // The GLB faces +Z (Blender -Y front), the bike faces -Z: half turn. Rig hips are at y 0.91
+    // in the rest pose and the saddle top is ~0.80, so drop the root to seat the pelvis.
+    this.rider.root.position.set(0, -0.13, 0.4);
+    this.rider.root.rotation.set(0, Math.PI, 0);
+    this.rider.setPose('ride');
+    this.riderStanding = false;
+  }
+
+  private focusRider(tab: 'face' | 'hair' | 'gear'): void {
+    if (!this.riderStanding) return;
+    this.rider.setShowHelmet(tab === 'gear');
+    const base = this.rider.root.position.clone();
+    // The rider faces +Z in its local frame, i.e. world direction (sin ry, 0, cos ry); put the
+    // camera out along that direction, swung a little for a three-quarter view.
+    const yaw = this.rider.root.rotation.y - 0.4;
+    const head = tab !== 'gear';
+    this.chase.setFocus({
+      target: base.clone().add(new Vector3(0, head ? 1.42 : 0.92, 0)),
+      distance: head ? 2.0 : 4.4,
+      height: head ? 0.12 : 0.45,
+      yaw,
+      sideOffset: head ? 0.55 : 0.95,
+    });
   }
 
   private switchScene(id: SceneId): void {
@@ -252,6 +323,8 @@ export class Game {
     this.menu.hide();
     this.attract = false;
     this.hud.setMenuOpen(false);
+    this.seatRider();
+    this.chase.setFocus(null);
     this.chase.setCloseUp(false);
     this.chase.setMode(this.savedCamera);
     this.hud.setCameraMode(this.savedCamera);
@@ -385,7 +458,12 @@ export class Game {
 
     if (!this.paused) {
       this.elapsed += dt;
-      if (this.autodrive || this.attract) this.applyAutodrive();
+      if (this.autodrive || (this.attract && !this.riderStanding)) this.applyAutodrive();
+      else if (this.riderStanding) {
+        this.input.setVirtual('up', false);
+        this.input.setVirtual('left', false);
+        this.input.setVirtual('right', false);
+      }
       this.input.update(dt);
       this.accumulator += dt;
       while (this.accumulator >= FIXED_DT) {

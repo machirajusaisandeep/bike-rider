@@ -8,7 +8,25 @@
  * Product names follow Royal Enfield's riding-gear catalogue (Streetwind, Windfarer, Explorer,
  * Intrepid, Cragsman, Stalwart, Conqueror, Lightwing); visuals are original low-poly stand-ins.
  */
+import presets from './rider-presets.json';
+
 export type BodyType = 'male' | 'female';
+export type BeardStyle = 'none' | 'stubble' | 'full';
+
+export interface FacePreset {
+  id: string;
+  name: string;
+  morphs: Record<string, number>;
+}
+export const FACES: Record<BodyType, FacePreset[]> = presets.faces as Record<
+  BodyType,
+  FacePreset[]
+>;
+export const HAIR: Record<BodyType, string[]> = presets.hair as Record<BodyType, string[]>;
+export const HAIR_NAMES: Record<string, string> = presets.hairNames;
+export const HAIR_COLORS: { id: string; hex: string }[] = presets.hairColors;
+export const SKIN_TONES: { id: string; hex: string }[] = presets.skinTones;
+export const BEARDS: BeardStyle[] = presets.beards as BeardStyle[];
 export type GearSlot = 'helmet' | 'jacket' | 'gloves' | 'elbow' | 'knee' | 'boots';
 export type Zone = 'head' | 'torso' | 'arms' | 'hands' | 'knees' | 'feet';
 
@@ -220,12 +238,24 @@ export function itemsFor(slot: GearSlot): GearItem[] {
 
 export interface RiderConfig {
   body: BodyType;
+  /** face preset id (per body type) */
+  face: string;
+  /** hair style id (per body type) */
+  hair: string;
+  hairColor: string;
+  skin: string;
+  beard: BeardStyle;
   /** item id per slot, or null for nothing */
   gear: Record<GearSlot, string | null>;
 }
 
 export const DEFAULT_RIDER: RiderConfig = {
   body: 'male',
+  face: 'arjun',
+  hair: 'crop',
+  hairColor: 'black',
+  skin: 's3',
+  beard: 'none',
   gear: {
     helmet: 'lightwing-open',
     jacket: null,
@@ -268,5 +298,23 @@ export function sanitizeRider(raw: unknown): RiderConfig {
     if (id === null) gear[slot] = null;
     else if (typeof id === 'string' && GEAR_BY_ID[id]?.slot === slot) gear[slot] = id;
   }
-  return { body, gear };
+  const faces = FACES[body];
+  const face = faces.some((f) => f.id === r.face) ? r.face! : faces[0]!.id;
+  const hair = HAIR[body].includes(r.hair ?? '') ? r.hair! : HAIR[body][0]!;
+  const hairColor = HAIR_COLORS.some((c) => c.id === r.hairColor) ? r.hairColor! : 'black';
+  const skin = SKIN_TONES.some((c) => c.id === r.skin) ? r.skin! : 's3';
+  const beard: BeardStyle =
+    body === 'male' && BEARDS.includes(r.beard as BeardStyle) ? (r.beard as BeardStyle) : 'none';
+  return { body, face, hair, hairColor, skin, beard, gear };
+}
+
+/** Defaults that make sense when switching body type. */
+export function riderForBody(cfg: RiderConfig, body: BodyType): RiderConfig {
+  return sanitizeRider({
+    ...cfg,
+    body,
+    face: FACES[body][0]!.id,
+    hair: HAIR[body][0]!,
+    beard: body === 'male' ? cfg.beard : 'none',
+  });
 }

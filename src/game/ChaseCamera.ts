@@ -1,4 +1,15 @@
 import { MathUtils, PerspectiveCamera, Vector3 } from 'three';
+
+export interface CameraFocus {
+  /** World point to look at. */
+  target: Vector3;
+  distance: number;
+  height: number;
+  /** Yaw of the camera around the target (rad, 0 = looking towards -Z). */
+  yaw: number;
+  /** Shift the target left on screen so the subject sits on the right side (metres). */
+  sideOffset: number;
+}
 import { CAMERA } from '../core/config';
 import type { CameraMode } from '../core/settings';
 import type { BikePhysics } from './BikePhysics';
@@ -25,6 +36,8 @@ export class ChaseCamera {
   private snap = true;
   /** Tight orbit around the rider for the gear screen. */
   private closeUp = false;
+  /** Fixed framing (character screen). Overrides every mode while set. */
+  private focus: CameraFocus | null = null;
   /** Terrain sampler so the camera never dips below the ground. */
   heightAt: (x: number, z: number) => number = () => 0;
 
@@ -37,6 +50,13 @@ export class ChaseCamera {
 
   setCloseUp(on: boolean): void {
     this.closeUp = on;
+  }
+
+  setFocus(f: CameraFocus | null): void {
+    // Entering focus from free camera: jump straight there instead of easing across the scene.
+    if (f && !this.focus) this.snap = true;
+    if (!f && this.focus) this.snap = true;
+    this.focus = f;
   }
 
   cycle(): CameraMode {
@@ -55,6 +75,30 @@ export class ChaseCamera {
     const fwd = bike.forward;
     _right.set(-fwd.z, 0, fwd.x);
     const ratio = bike.speedRatio;
+
+    if (this.focus) {
+      const f = this.focus;
+      const dir = new Vector3(Math.sin(f.yaw), 0, Math.cos(f.yaw));
+      const rightV = new Vector3(dir.z, 0, -dir.x);
+      _desired.copy(f.target).addScaledVector(dir, f.distance);
+      _desired.y = f.target.y + f.height;
+      _target.copy(f.target).addScaledVector(rightV, -f.sideOffset);
+      const lag = 6;
+      this.pos.lerp(_desired, Math.min(1, lag * dt));
+      this.lookAt.lerp(_target, Math.min(1, lag * dt));
+      if (this.snap) {
+        this.pos.copy(_desired);
+        this.lookAt.copy(_target);
+        this.snap = false;
+      }
+      cam.position.copy(this.pos);
+      cam.lookAt(this.lookAt);
+      if (Math.abs(cam.fov - 40) > 0.01) {
+        cam.fov = MathUtils.lerp(cam.fov, 40, Math.min(1, 3 * dt));
+        cam.updateProjectionMatrix();
+      }
+      return;
+    }
 
     switch (this.mode) {
       case 'chase': {
