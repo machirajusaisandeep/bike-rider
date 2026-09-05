@@ -1,7 +1,7 @@
 # Bike Rider
 
-Ride a Royal Enfield Scram 411 through six Indian landscapes in the browser. Pick a road on the
-scene screen, then ride with WASD or the arrow keys.
+Ride a Royal Enfield Scram 411 through six Indian landscapes in the browser. Suit up your rider,
+pick a road, then ride with WASD or the arrow keys.
 
 |                                                       |                                                               |
 | ----------------------------------------------------- | ------------------------------------------------------------- |
@@ -69,6 +69,37 @@ Arcade handling, not a physics engine (`src/game/BikePhysics.ts`):
 - Visual lean is derived from lateral acceleration; wheels spin from distance travelled; the
   front wheel turns about the real (raked) fork axis.
 - Fixed 120 Hz simulation step, rendering at display refresh.
+
+## Rider and gear
+
+![Rider and gear screen](docs/rider-gear.png)
+
+Before the road you build your rider: male or female body, then one item per slot from a
+catalogue that follows Royal Enfield's riding-gear lines:
+
+| Slot         | Options (points)                                                                                               |
+| ------------ | -------------------------------------------------------------------------------------------------------------- |
+| Helmet       | Lightwing Open Face (20), Lightwing White Flame (20), Streetwind Full Face (30)                                |
+| Jacket       | Streetwind V2 mesh (12 torso + 6 arms), Windfarer touring (16 + 8), Explorer V3 with KNOX CE2 armour (20 + 10) |
+| Gloves       | Intrepid (6), Cragsman (8), Stalwart (10)                                                                      |
+| Elbow guards | RE × KNOX elbow cups (+5 arms)                                                                                 |
+| Knee guards  | Soft knee sleeves (10), Conqueror CE Level 2 (18)                                                              |
+| Footwear     | Riding sneakers (5), ankle riding boots (9), adventure boots (12)                                              |
+
+**Protection score** (`src/game/gear.ts`) is the sum of covered body zones, capped per zone:
+head 30, torso 20, arms 10, hands 10, knees 18, feet 12, total 100. Items that cover the same
+zone do not stack past the cap. The gear screen shows the score, a body map tinted by coverage
+and the list of exposed zones, e.g. helmet + gloves + shoes = 41/100 with torso, arms and knees
+exposed. The in-ride HUD shows the score as a shield chip. This is the input for the upcoming
+health bar: damage to an uncovered zone will hurt more.
+
+The rider (`src/game/Rider.ts`) is a procedural low-poly figure seated on the bike, hands on the
+bars, feet on the pegs, leaning with the bike. Gear is drawn as extra shells, so what you pick
+is what you see riding: helmet type and livery, jacket colour with shoulder and elbow cups,
+gauntlets, hard-shell knee guards, boot height. Product names reference Royal Enfield's
+catalogue; the visuals are original stand-ins, not their product imagery.
+
+![Full gear rider](docs/rider-full-gear.png)
 
 ## Scenes and world
 
@@ -160,7 +191,8 @@ work without renaming nodes.
 
 URL parameters (development only):
 
-- `?scene=munnar|ladakh|wayanad|ooty|varkala|bengaluru` picks a scene; `?nomenu` skips the scene screen.
+- `?scene=munnar|ladakh|wayanad|ooty|varkala|bengaluru` picks a scene; `?nomenu` skips the menu; `?step=scene` opens the menu on the road step.
+- `?rider=male|female&gear=streetwind-full,explorer-v3,...` previews a loadout; `?closeup` orbits close to the rider.
 - `?quality=low|medium|high` overrides the stored quality.
 - `?autodrive` pins the throttle and follows the road, handy for screenshots and perf checks.
 - In dev builds the game instance is exposed as `window.__bikeRider`.
@@ -173,10 +205,10 @@ src/
   main.ts            WebGL detection, fallback screen, lazy-loads the game
   style.css          HUD, overlays, touch controls, fallback
   core/              config (tuning), settings persistence, input, WebGL probe
-  game/              Game loop, Bike model, BikePhysics, ChaseCamera, EngineAudio
+  game/              Game loop, Bike model, Rider + gear catalogue, BikePhysics, ChaseCamera, EngineAudio
   world/             scenes, heights, Terrain, Road, Vegetation, Ocean, City, Atmosphere, Dust
   postfx/            EffectComposer pipeline
-  ui/                Hud (in-ride overlay), Menu (scene select)
+  ui/                Hud (in-ride overlay), Menu (rider + gear, scene select)
 scripts/fetch-model.mjs   downloads the Scram 411 GLB + Draco decoder (gitignored output)
 public/previews/          scene thumbnails for the menu
 ```
@@ -188,6 +220,7 @@ can be dropped on GitHub Pages, Netlify, Vercel or any static host with no confi
 
 ## Roadmap
 
+- Health bar driven by the protection score: crashes and off-road hits damage exposed zones.
 - Rider figure; ask Royal Enfield about licensing the model for a public deployment.
 - Traffic, other riders, and checkpoints / a photo mode.
 - Gamepad support and haptics on mobile.

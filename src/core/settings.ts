@@ -1,3 +1,4 @@
+import { DEFAULT_RIDER, sanitizeRider, type RiderConfig } from '../game/gear';
 import { DEFAULT_SCENE, isSceneId, type SceneId } from '../world/scenes';
 
 export type Quality = 'low' | 'medium' | 'high';
@@ -7,6 +8,7 @@ export type CameraMode = 'chase' | 'cockpit' | 'cinematic';
 
 export interface Settings {
   scene: SceneId;
+  rider: RiderConfig;
   quality: Quality;
   timeOfDay: TimeOfDay;
   units: Units;
@@ -19,6 +21,7 @@ const KEY = 'bike-rider.settings.v2';
 
 export const DEFAULT_SETTINGS: Settings = {
   scene: DEFAULT_SCENE,
+  rider: DEFAULT_RIDER,
   quality: 'high',
   timeOfDay: 'auto',
   units: 'kmh',
@@ -33,6 +36,7 @@ export function loadSettings(): Settings {
     if (!raw) return { ...DEFAULT_SETTINGS };
     const s = { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
     if (!isSceneId(s.scene)) s.scene = DEFAULT_SCENE;
+    s.rider = sanitizeRider(s.rider);
     if (!['auto', 'day', 'golden', 'night'].includes(s.timeOfDay)) s.timeOfDay = 'auto';
     return s;
   } catch {

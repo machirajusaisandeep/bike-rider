@@ -42,6 +42,7 @@ const ICONS = {
   settings:
     '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  shield: '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>',
   scenes:
     '<svg viewBox="0 0 24 24"><path d="M3 17l5-7 4 5 3-3 6 5z"/><circle cx="17" cy="7" r="2"/></svg>',
 };
@@ -70,6 +71,7 @@ export class Hud {
   private surfaceEl: HTMLElement;
   private distEl: HTMLElement;
   private fpsEl: HTMLElement;
+  private protectEl: HTMLElement;
   private cameraBtn: HTMLButtonElement;
   private cameraLabel: HTMLElement;
   private pauseBtn: HTMLButtonElement;
@@ -102,7 +104,9 @@ export class Hud {
     this.distEl = el('span', 'chip', '0.0 km');
     this.surfaceEl = el('span', 'chip chip-surface', 'Asphalt');
     this.fpsEl = el('span', 'chip chip-fps', '60 fps');
-    route.append(this.distEl, this.surfaceEl, this.fpsEl);
+    this.protectEl = el('span', 'chip chip-protect', '');
+    this.protectEl.title = 'Protection score from your riding gear';
+    route.append(this.distEl, this.surfaceEl, this.protectEl, this.fpsEl);
     tl.appendChild(route);
     this.root.appendChild(tl);
 
@@ -346,6 +350,14 @@ export class Hud {
 
   private emitSettings(): void {
     this.cb.onSettingsChange({ ...this.settings });
+  }
+
+  setProtection(score: number, exposed: string[]): void {
+    this.protectEl.innerHTML = `${ICONS.shield}${score}<small>/100</small>`;
+    this.protectEl.dataset.level = score >= 75 ? 'high' : score >= 45 ? 'mid' : 'low';
+    this.protectEl.title = exposed.length
+      ? `Protection ${score}/100 · exposed: ${exposed.join(', ')}`
+      : `Protection ${score}/100 · fully covered`;
   }
 
   /** Transient status line (model loading etc.). Pass null to hide. */

@@ -23,6 +23,8 @@ export class ChaseCamera {
   private orbit = 0;
   private shake = 0;
   private snap = true;
+  /** Tight orbit around the rider for the gear screen. */
+  private closeUp = false;
   /** Terrain sampler so the camera never dips below the ground. */
   heightAt: (x: number, z: number) => number = () => 0;
 
@@ -31,6 +33,10 @@ export class ChaseCamera {
   setMode(mode: CameraMode): void {
     this.mode = mode;
     this.snap = true;
+  }
+
+  setCloseUp(on: boolean): void {
+    this.closeUp = on;
   }
 
   cycle(): CameraMode {
@@ -70,15 +76,20 @@ export class ChaseCamera {
         break;
       }
       case 'cinematic': {
-        this.orbit += dt * (0.22 + ratio * 0.15);
-        const r = 6.5 + Math.sin(elapsed * 0.31) * 1.2;
+        this.orbit += dt * (this.closeUp ? 0.18 : 0.22 + ratio * 0.15);
+        const r = this.closeUp
+          ? 3.4 + Math.sin(elapsed * 0.31) * 0.3
+          : 6.5 + Math.sin(elapsed * 0.31) * 1.2;
         _desired.set(
           bike.position.x + Math.cos(this.orbit) * r,
-          bike.position.y + 1.2 + (Math.sin(elapsed * 0.47) * 0.5 + 0.5) * 1.6,
+          bike.position.y +
+            (this.closeUp
+              ? 1.45 + Math.sin(elapsed * 0.47) * 0.15
+              : 1.2 + (Math.sin(elapsed * 0.47) * 0.5 + 0.5) * 1.6),
           bike.position.z + Math.sin(this.orbit) * r,
         );
-        _target.copy(bike.position).addScaledVector(fwd, 1.2);
-        _target.y = bike.position.y + 0.7;
+        _target.copy(bike.position).addScaledVector(fwd, this.closeUp ? 0.1 : 1.2);
+        _target.y = bike.position.y + (this.closeUp ? 1.05 : 0.7);
         break;
       }
     }

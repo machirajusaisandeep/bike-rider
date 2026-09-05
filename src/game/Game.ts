@@ -29,6 +29,8 @@ import { Dust } from '../world/Dust';
 import { isSceneId, type SceneId } from '../world/scenes';
 import { World } from '../world/World';
 import { Bike, loadExternalBike } from './Bike';
+import { GEAR_BY_ID, protectionFor, type RiderConfig } from './gear';
+import { Rider } from './Rider';
 import { BikePhysics } from './BikePhysics';
 import { ChaseCamera } from './ChaseCamera';
 import { EngineAudio } from './EngineAudio';
@@ -46,9 +48,10 @@ export class Game {
   private chase: ChaseCamera;
   private world: World;
   private bike = new Bike();
+  private rider = new Rider();
   private physics = new BikePhysics();
   private input = new Input();
-  private hud: Hud;
+  private hud!: Hud;
   private menu: Menu;
   private dust: Dust;
   private audio = new EngineAudio();
@@ -89,6 +92,22 @@ export class Game {
       this.settings.timeOfDay = timeParam;
     const sceneParam = this.params.get('scene');
     if (isSceneId(sceneParam)) this.settings.scene = sceneParam;
+    // ?rider=female&gear=streetwind-full,explorer-v3,... previews a loadout without touching storage
+    const riderParam = this.params.get('rider');
+    const gearParam = this.params.get('gear');
+    if (riderParam || gearParam !== null) {
+      const cfg = structuredClone(this.settings.rider);
+      if (riderParam === 'male' || riderParam === 'female') cfg.body = riderParam;
+      if (gearParam !== null) {
+        for (const slot of Object.keys(cfg.gear) as (keyof typeof cfg.gear)[])
+          cfg.gear[slot] = null;
+        for (const id of gearParam.split(',').filter(Boolean)) {
+          const item = GEAR_BY_ID[id];
+          if (item) cfg.gear[item.slot] = id;
+        }
+      }
+      this.settings.rider = cfg;
+    }
     const qParam = this.params.get('quality');
     if (qParam === 'low' || qParam === 'medium' || qParam === 'high')
       this.settings.quality = qParam;
@@ -113,6 +132,8 @@ export class Game {
     this.physics.heightAt = this.world.heightAt;
     this.chase.heightAt = this.world.heightAt;
     this.scene.add(this.bike.root);
+    this.bike.lean.add(this.rider.root);
+    this.applyRider(this.settings.rider, false);
     this.dust = new Dust(this.renderer.getPixelRatio());
     this.scene.add(this.dust.points);
 
@@ -123,9 +144,15 @@ export class Game {
       onSettingsChange: (s) => this.applySettings(s),
       onOpenScenes: () => this.openMenu(),
     });
-    this.menu = new Menu(container, this.settings.scene, {
+    {
+      const p = protectionFor(this.settings.rider);
+      this.hud.setProtection(p.total, p.exposed);
+    }
+    this.menu = new Menu(container, this.settings.scene, this.settings.rider, {
+      onRiderChange: (cfg) => this.applyRider(cfg, true),
       onPreview: (id) => this.switchScene(id),
       onStart: (id) => this.startRide(id),
+      onStepChange: (step) => this.chase.setCloseUp(step === 'rider'),
     });
 
     this.input.on('KeyR', () => !this.attract && this.reset());
@@ -146,8 +173,10 @@ export class Game {
     if (EXTERNAL_BIKE_MODEL) this.loadModel(EXTERNAL_BIKE_MODEL);
 
     const skipMenu = this.params.has('nomenu') || this.autodrive;
-    if (skipMenu) this.menu.hide();
-    else this.openMenu();
+    if (skipMenu) {
+      this.menu.hide();
+      if (this.params.has('closeup')) this.chase.setCloseUp(true);
+    } else this.openMenu(this.params.get('step') === 'scene' ? 'scene' : 'rider');
 
     this.clock.start();
     this.raf = requestAnimationFrame(this.frame);
@@ -180,8 +209,22 @@ export class Game {
     };
   }
 
+  // ------------------------------------------------------------------ rider -----------------
+  private applyRider(cfg: RiderConfig, save: boolean): void {
+    this.settings.rider = cfg;
+    this.rider.apply(cfg);
+    const p = protectionFor(cfg);
+    this.hud?.setProtection(p.total, p.exposed);
+    if (save) saveSettings(this.settings);
+  }
+
+  /** Current protection score 0..100 for the upcoming health system. */
+  get protection(): number {
+    return protectionFor(this.settings.rider).total;
+  }
+
   // ------------------------------------------------------------------ scenes / menu ------
-  private openMenu(): void {
+  private openMenu(step: 'rider' | 'scene' = 'scene'): void {
     if (this.attract) return;
     this.attract = true;
     this.paused = false;
@@ -189,8 +232,9 @@ export class Game {
     this.hud.setMenuOpen(true);
     this.savedCamera = this.settings.cameraMode;
     this.chase.setMode('cinematic');
+    this.chase.setCloseUp(step === 'rider');
     this.menu.select(this.settings.scene, false);
-    this.menu.show();
+    this.menu.show(step);
   }
 
   private switchScene(id: SceneId): void {
@@ -208,6 +252,7 @@ export class Game {
     this.menu.hide();
     this.attract = false;
     this.hud.setMenuOpen(false);
+    this.chase.setCloseUp(false);
     this.chase.setMode(this.savedCamera);
     this.hud.setCameraMode(this.savedCamera);
     this.reset();
@@ -371,6 +416,7 @@ export class Game {
       this.dust.update(dt, _rearContact, _back, Math.abs(p.speed), dustRate);
 
       this.bike.setLights(this.world.headlightsOn, braking && Math.abs(p.speed) > 0.5);
+      this.rider.update(p.steerAngle, dt);
       this.audio.update(p.rpm, this.input.state.throttle, this.attract);
 
       if (!this.attract) {
