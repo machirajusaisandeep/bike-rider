@@ -1,0 +1,114 @@
+import { MathUtils, PerspectiveCamera, Vector3 } from 'three';
+import { CAMERA } from '../core/config';
+import type { CameraMode } from '../core/settings';
+import type { BikePhysics } from './BikePhysics';
+
+const _target = new Vector3();
+const _desired = new Vector3();
+const _look = new Vector3();
+const _right = new Vector3();
+
+export const CAMERA_MODES: CameraMode[] = ['chase', 'cockpit', 'cinematic'];
+
+export const CAMERA_LABELS: Record<CameraMode, string> = {
+  chase: 'Chase',
+  cockpit: 'Cockpit',
+  cinematic: 'Cinematic',
+};
+
+export class ChaseCamera {
+  mode: CameraMode = 'chase';
+  private pos = new Vector3(0, 3, 8);
+  private lookAt = new Vector3();
+  private orbit = 0;
+  private shake = 0;
+  private snap = true;
+
+  constructor(readonly camera: PerspectiveCamera) {}
+
+  setMode(mode: CameraMode): void {
+    this.mode = mode;
+    this.snap = true;
+  }
+
+  cycle(): CameraMode {
+    const i = CAMERA_MODES.indexOf(this.mode);
+    this.setMode(CAMERA_MODES[(i + 1) % CAMERA_MODES.length]!);
+    return this.mode;
+  }
+
+  /** Force the camera to jump to its ideal spot next frame (after reset). */
+  resetSmoothing(): void {
+    this.snap = true;
+  }
+
+  update(dt: number, bike: BikePhysics, roughness: number, elapsed: number): void {
+    const cam = this.camera;
+    const fwd = bike.forward;
+    _right.set(-fwd.z, 0, fwd.x);
+    const ratio = bike.speedRatio;
+
+    switch (this.mode) {
+      case 'chase': {
+        const dist = CAMERA.chaseDistance + ratio * 1.6;
+        _desired.copy(bike.position).addScaledVector(fwd, -dist);
+        _desired.y = CAMERA.chaseHeight + ratio * 0.35;
+        // Slide the camera to the outside of the turn so the lean reads nicely.
+        _desired.addScaledVector(_right, bike.lean * 0.9);
+        _target.copy(bike.position).addScaledVector(fwd, CAMERA.chaseLookAhead + ratio * 4);
+        _target.y = 0.85;
+        break;
+      }
+      case 'cockpit': {
+        _desired.copy(bike.position).addScaledVector(fwd, -0.25);
+        _desired.y = 1.38;
+        _desired.addScaledVector(_right, bike.lean * 0.25);
+        _target.copy(bike.position).addScaledVector(fwd, 12);
+        _target.y = 0.9 + ratio * 0.5;
+        break;
+      }
+      case 'cinematic': {
+        this.orbit += dt * (0.22 + ratio * 0.15);
+        const r = 6.5 + Math.sin(elapsed * 0.31) * 1.2;
+        _desired.set(
+          bike.position.x + Math.cos(this.orbit) * r,
+          1.2 + (Math.sin(elapsed * 0.47) * 0.5 + 0.5) * 1.6,
+          bike.position.z + Math.sin(this.orbit) * r,
+        );
+        _target.copy(bike.position).addScaledVector(fwd, 1.2);
+        _target.y = 0.7;
+        break;
+      }
+    }
+
+    if (this.snap) {
+      this.pos.copy(_desired);
+      this.lookAt.copy(_target);
+      this.snap = false;
+    } else {
+      const lag = this.mode === 'cinematic' ? 2.5 : CAMERA.followLag + ratio * 2;
+      this.pos.lerp(_desired, Math.min(1, lag * dt));
+      this.lookAt.lerp(_target, Math.min(1, CAMERA.lookLag * dt));
+    }
+
+    // Rough surface / engine vibration shake
+    this.shake = MathUtils.lerp(this.shake, roughness, Math.min(1, 6 * dt));
+    const s = this.shake * (this.mode === 'cockpit' ? 0.05 : 0.03);
+    const t = elapsed * 37;
+    cam.position.set(
+      this.pos.x + Math.sin(t * 1.3) * s,
+      this.pos.y + Math.sin(t * 1.7 + 1.3) * s,
+      this.pos.z + Math.cos(t * 1.1) * s,
+    );
+    _look.copy(this.lookAt);
+    cam.lookAt(_look);
+
+    // Speed-based FOV, subtle roll with the lean in cockpit view.
+    const fov = CAMERA.baseFov + ratio * CAMERA.fovSpeedGain;
+    if (Math.abs(cam.fov - fov) > 0.01) {
+      cam.fov = MathUtils.lerp(cam.fov, fov, Math.min(1, 3 * dt));
+      cam.updateProjectionMatrix();
+    }
+    if (this.mode === 'cockpit') cam.rotateZ(bike.lean * 0.6);
+  }
+}
