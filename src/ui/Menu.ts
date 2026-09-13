@@ -1,5 +1,8 @@
 import {
   BEARDS,
+  BINDIS,
+  EARRINGS,
+  TURBAN_COLORS,
   FACES,
   GEAR_BY_ID,
   HAIR,
@@ -14,6 +17,8 @@ import {
   protectionFor,
   riderForBody,
   type BeardStyle,
+  type BindiStyle,
+  type EarringStyle,
   type BodyType,
   type RiderConfig,
   type Zone,
@@ -21,6 +26,7 @@ import {
 import { SCENES, type SceneDef, type SceneId } from '../world/scenes';
 import type { GameMode } from '../game/Run';
 import { t } from '../core/i18n';
+import { createElement, RotateCcw, RotateCw, Scan, ArrowRight } from 'lucide';
 
 export type MenuStep = 'rider' | 'scene';
 export type RiderTab = 'face' | 'hair' | 'gear';
@@ -34,6 +40,7 @@ export interface MenuCallbacks {
   onStepChange: (step: MenuStep) => void;
   /** Character tab changed: the camera frames the head for face/hair, full body for gear. */
   onFocus: (tab: RiderTab) => void;
+  onInspect: (action: 'left' | 'right' | 'reset') => void;
   onModeChange: (mode: GameMode) => void;
   onOpenMissions: () => void;
   onOpenGarage: () => void;
@@ -181,25 +188,32 @@ export class Menu {
       <div class="char">
         <div class="char-panel">
           <div class="char-tabs" role="tablist">
-            <button type="button" class="char-tab active" data-tab="face">Face</button>
-            <button type="button" class="char-tab" data-tab="hair">Hair</button>
-            <button type="button" class="char-tab" data-tab="gear">Riding gear</button>
+            <button type="button" class="char-tab active" data-tab="face" data-i18n="rider.tab.face">Face</button>
+            <button type="button" class="char-tab" data-tab="hair" data-i18n="rider.tab.hair">Hair</button>
+            <button type="button" class="char-tab" data-tab="gear" data-i18n="rider.tab.gear">Riding gear</button>
           </div>
           <div class="char-page" data-page="face">
-            <div class="char-label">Face</div>
+            <div class="char-label" data-i18n="rider.profile">Profile</div>
             <div class="thumb-grid faces"></div>
-            <div class="char-label">Skin tone</div>
+            <div class="char-label" data-i18n="rider.skin">Skin tone</div>
             <div class="swatches skins"></div>
-            <div class="beard-row"><div class="char-label">Beard</div><div class="seg seg-beard"></div></div>
+            <div class="accent-rows">
+              <div class="accent-row beard-row"><div class="char-label" data-i18n="rider.facialHair">Facial hair</div><div class="seg seg-face seg-beard"></div></div>
+              <div class="accent-row kajal-row"><div class="char-label" data-i18n="rider.kajal">Kajal</div><div class="seg seg-face seg-kajal"></div></div>
+              <div class="accent-row bindi-row"><div class="char-label" data-i18n="rider.bindi">Bindi</div><div class="seg seg-face seg-bindi"></div></div>
+              <div class="accent-row earring-row"><div class="char-label" data-i18n="rider.earrings">Earrings</div><div class="seg seg-face seg-earrings"></div></div>
+            </div>
           </div>
           <div class="char-page" data-page="hair" hidden>
-            <div class="char-label">Hair</div>
+            <div class="char-label" data-i18n="rider.hair">Hair</div>
             <div class="thumb-grid hairs"></div>
-            <div class="char-label">Hair colour</div>
+            <div class="char-label hair-color-label" data-i18n="rider.hairColour">Hair colour</div>
             <div class="swatches hair-colors"></div>
           </div>
           <div class="char-page" data-page="gear" hidden>
+            <div class="gear-heading"><span>Royal Enfield riding collection</span><span>India</span></div>
             <div class="gear-list"></div>
+            <p class="gear-reference-note">Game loadout points are not safety ratings.</p>
           </div>
           <div class="char-foot">
             <div class="seg seg-body">
@@ -211,11 +225,14 @@ export class Menu {
               <b class="protect-num">0</b><span>/100</span>
               <i class="protect-exposed"></i>
             </div>
-            <button type="button" class="btn-primary btn-next">Choose a road <span class="key">↵</span></button>
+            <button type="button" class="btn-primary btn-next">Choose a road</button>
           </div>
         </div>
         <aside class="char-side">
+          <div class="rider-identity"><span class="rider-identity-label">RIDER PROFILE</span><strong class="rider-name"></strong><span class="rider-outfit"></span></div>
+          <div class="rider-view-tools" aria-label="Rider view"></div>
           <div class="protect-card compact">
+            <div class="loadout-caption">LOADOUT <span>Game points</span></div>
             <div class="protect-head">
               ${BODY_SVG}
               <ul class="zone-list"></ul>
@@ -224,6 +241,24 @@ export class Menu {
           </div>
         </aside>
       </div>`;
+    const viewTools = this.riderPanel.querySelector<HTMLElement>('.rider-view-tools')!;
+    for (const [action, icon, label] of [
+      ['left', RotateCcw, 'Rotate left'],
+      ['reset', Scan, 'Reset view'],
+      ['right', RotateCw, 'Rotate right'],
+    ] as const) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'rider-view-btn';
+      b.title = label;
+      b.setAttribute('aria-label', label);
+      b.appendChild(createElement(icon, { width: 19, height: 19 }));
+      b.addEventListener('click', () => this.cb.onInspect(action));
+      viewTools.appendChild(b);
+    }
+    this.riderPanel
+      .querySelector('.btn-next')!
+      .appendChild(createElement(ArrowRight, { width: 18, height: 18 }));
     const base = import.meta.env.BASE_URL;
     this.riderPanel
       .querySelectorAll<HTMLButtonElement>('.char-tab')
@@ -248,26 +283,13 @@ export class Menu {
       b.addEventListener('click', () => this.change({ skin: t.id }));
       skins.appendChild(b);
     }
-    const hcs = this.riderPanel.querySelector<HTMLElement>('.hair-colors')!;
-    for (const c of HAIR_COLORS) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'swatch';
-      b.dataset.hairColor = c.id;
-      b.style.background = c.hex;
-      b.addEventListener('click', () => this.change({ hairColor: c.id }));
-      hcs.appendChild(b);
-    }
-    const beardSeg = this.riderPanel.querySelector<HTMLElement>('.seg-beard')!;
-    for (const bd of BEARDS) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'seg-btn';
-      b.dataset.beard = bd;
-      b.textContent = bd === 'none' ? 'Clean' : bd === 'stubble' ? 'Stubble' : 'Full';
-      b.addEventListener('click', () => this.change({ beard: bd as BeardStyle }));
-      beardSeg.appendChild(b);
-    }
+    this.buildHairColors();
+    this.buildSeg('.seg-beard', 'beard', BEARDS, (bd) => this.change({ beard: bd as BeardStyle }));
+    this.buildSeg('.seg-kajal', 'kajal', ['off', 'on'], (v) => this.change({ kajal: v === 'on' }));
+    this.buildSeg('.seg-bindi', 'bindi', BINDIS, (v) => this.change({ bindi: v as BindiStyle }));
+    this.buildSeg('.seg-earrings', 'earrings', EARRINGS, (v) =>
+      this.change({ earrings: v as EarringStyle }),
+    );
     this.buildThumbGrids(base);
     const list = this.riderPanel.querySelector<HTMLElement>('.gear-list')!;
     for (const slot of SLOTS) {
@@ -279,13 +301,14 @@ export class Menu {
         <div class="gear-slot">
           <span class="gear-slot-name">${SLOT_LABEL[slot]}</span>
           <span class="gear-slot-pick"></span>
+          <a class="gear-source" target="_blank" rel="noopener noreferrer">Product reference</a>
         </div>
         <div class="gear-options">
           <button type="button" class="gear-opt" data-id="">None<small>0</small></button>
           ${items
             .map((it) => {
               const pts = Object.values(it.covers).reduce((a, b) => a + b, 0);
-              return `<button type="button" class="gear-opt" data-id="${it.id}" title="${it.blurb}"><i style="background:${it.color};border-color:${it.accent ?? 'rgba(255,255,255,.25)'}"></i>${it.name}<small>+${pts}</small></button>`;
+              return `<button type="button" class="gear-opt" data-id="${it.id}" title="${it.blurb}"><i style="background:${it.color};border-color:${it.accent ?? 'rgba(255,255,255,.25)'}"></i><span>${it.name}</span><small>+${pts}</small></button>`;
             })
             .join('')}
         </div>`;
@@ -410,6 +433,48 @@ export class Menu {
     this.cb.onRiderChange(structuredClone(this.rider));
   }
 
+  /** Segmented control for a face option; button labels come from `rider.<field>.<value>`. */
+  private buildSeg(
+    selector: string,
+    field: string,
+    values: readonly string[],
+    onPick: (value: string) => void,
+  ): void {
+    const seg = this.riderPanel.querySelector<HTMLElement>(selector)!;
+    seg.innerHTML = '';
+    for (const v of values) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seg-btn';
+      b.dataset[field] = v;
+      b.textContent = t(`rider.${field}.${v}`);
+      b.addEventListener('click', () => onPick(v));
+      seg.appendChild(b);
+    }
+  }
+
+  /** Hair colour swatches, or turban cloth colours while the turban is selected. */
+  private buildHairColors(): void {
+    const hcs = this.riderPanel.querySelector<HTMLElement>('.hair-colors')!;
+    hcs.innerHTML = '';
+    const turban = this.rider.hair === 'turban';
+    this.riderPanel.querySelector<HTMLElement>('.hair-color-label')!.textContent = t(
+      turban ? 'rider.turbanColour' : 'rider.hairColour',
+    );
+    for (const c of turban ? TURBAN_COLORS : HAIR_COLORS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.dataset.hairColor = c.id;
+      b.style.background = c.hex;
+      b.title = c.name ?? c.id;
+      b.addEventListener('click', () =>
+        this.change(turban ? { turbanColor: c.id } : { hairColor: c.id }),
+      );
+      hcs.appendChild(b);
+    }
+  }
+
   private buildThumbGrids(base: string): void {
     const faces = this.riderPanel.querySelector<HTMLElement>('.faces')!;
     faces.innerHTML = '';
@@ -418,6 +483,7 @@ export class Menu {
       b.type = 'button';
       b.className = 'thumb';
       b.dataset.face = f.id;
+      b.title = f.region ?? f.name;
       b.innerHTML = `<img src="${base}previews/rider/face_${this.rider.body}_${f.id}.png" alt="${f.name}" loading="lazy"/><span>${f.name}</span>`;
       b.addEventListener('click', () => this.change({ face: f.id }));
       faces.appendChild(b);
@@ -429,14 +495,25 @@ export class Menu {
       b.type = 'button';
       b.className = 'thumb';
       b.dataset.hair = h;
-      b.innerHTML = `<img src="${base}previews/rider/hair_${this.rider.body}_${h}.png" alt="${HAIR_NAMES[h]}" loading="lazy"/><span>${HAIR_NAMES[h] ?? h}</span>`;
+      const label = t(`hair.${h}`) !== `hair.${h}` ? t(`hair.${h}`) : (HAIR_NAMES[h] ?? h);
+      b.innerHTML = `<img src="${base}previews/rider/hair_${this.rider.body}_${h}.png" alt="${label}" loading="lazy"/><span>${label}</span>`;
       b.addEventListener('click', () => this.change({ hair: h }));
       hairs.appendChild(b);
     }
-    this.riderPanel.querySelector<HTMLElement>('.beard-row')!.hidden = this.rider.body !== 'male';
+    const female = this.rider.body === 'female';
+    this.riderPanel.querySelector<HTMLElement>('.beard-row')!.hidden = female;
+    this.riderPanel.querySelector<HTMLElement>('.bindi-row')!.hidden = !female;
+    this.riderPanel.querySelector<HTMLElement>('.earring-row')!.hidden = !female;
   }
 
   private renderRider(): void {
+    const profile = FACES[this.rider.body].find((f) => f.id === this.rider.face);
+    this.riderPanel.querySelector<HTMLElement>('.rider-name')!.textContent =
+      profile?.name ?? 'Rider';
+    const jacket = this.rider.gear.jacket ? GEAR_BY_ID[this.rider.gear.jacket] : undefined;
+    this.riderPanel.querySelector<HTMLElement>('.rider-outfit')!.textContent = jacket
+      ? `${jacket.name} / ${jacket.colorway ?? ''}`
+      : 'Everyday wear';
     this.riderPanel
       .querySelectorAll<HTMLElement>('[data-face]')
       .forEach((b) => b.classList.toggle('active', b.dataset.face === this.rider.face));
@@ -446,21 +523,42 @@ export class Menu {
     this.riderPanel
       .querySelectorAll<HTMLElement>('[data-skin]')
       .forEach((b) => b.classList.toggle('active', b.dataset.skin === this.rider.skin));
+    const turban = this.rider.hair === 'turban';
+    const swatches = this.riderPanel.querySelectorAll<HTMLElement>('[data-hair-color]');
+    const wantTurban = swatches[0]?.title === TURBAN_COLORS[0]?.name;
+    if (swatches.length && wantTurban !== turban) this.buildHairColors();
+    const pickedColor = turban ? this.rider.turbanColor : this.rider.hairColor;
     this.riderPanel
       .querySelectorAll<HTMLElement>('[data-hair-color]')
-      .forEach((b) => b.classList.toggle('active', b.dataset.hairColor === this.rider.hairColor));
+      .forEach((b) => b.classList.toggle('active', b.dataset.hairColor === pickedColor));
     this.riderPanel
       .querySelectorAll<HTMLElement>('[data-beard]')
       .forEach((b) => b.classList.toggle('active', b.dataset.beard === this.rider.beard));
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('[data-kajal]')
+      .forEach((b) =>
+        b.classList.toggle('active', (b.dataset.kajal === 'on') === this.rider.kajal),
+      );
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('[data-bindi]')
+      .forEach((b) => b.classList.toggle('active', b.dataset.bindi === this.rider.bindi));
+    this.riderPanel
+      .querySelectorAll<HTMLElement>('[data-earrings]')
+      .forEach((b) => b.classList.toggle('active', b.dataset.earrings === this.rider.earrings));
     this.riderPanel
       .querySelectorAll<HTMLButtonElement>('[data-body]')
       .forEach((b) => b.classList.toggle('active', b.dataset.body === this.rider.body));
     for (const slot of SLOTS) {
       const row = this.riderPanel.querySelector<HTMLElement>(`.gear-row[data-slot="${slot}"]`)!;
       const id = this.rider.gear[slot] ?? '';
-      row
-        .querySelectorAll<HTMLButtonElement>('.gear-opt')
-        .forEach((b) => b.classList.toggle('active', (b.dataset.id ?? '') === id));
+      row.querySelectorAll<HTMLButtonElement>('.gear-opt').forEach((b) => {
+        const selected = (b.dataset.id ?? '') === id;
+        b.classList.toggle('active', selected);
+        b.setAttribute('aria-pressed', String(selected));
+      });
+      const ref = row.querySelector<HTMLAnchorElement>('.gear-source')!;
+      ref.hidden = !id || !GEAR_BY_ID[id]?.source;
+      ref.href = id ? (GEAR_BY_ID[id]?.source ?? '#') : '#';
       row.querySelector<HTMLElement>('.gear-slot-pick')!.textContent = id
         ? GEAR_BY_ID[id]!.name
         : 'Nothing';
@@ -487,8 +585,8 @@ export class Menu {
             : 'rgba(255,180,40,0.75)';
     });
     this.exposedEl.textContent = p.exposed.length
-      ? `exposed: ${p.exposed.map((z) => ZONE_LABEL[z].toLowerCase()).join(', ')}`
-      : 'fully covered';
+      ? `${p.exposed.length} gaps`
+      : 'all zones equipped';
     this.exposedEl.classList.toggle('ok', p.exposed.length === 0);
   }
 

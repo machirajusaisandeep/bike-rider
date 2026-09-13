@@ -51,6 +51,23 @@ describe('Scoring', () => {
     expect(s.speedSeconds).toBeCloseTo(3.1, 1);
     expect(s.bonusPoints).toBe(60);
   });
+
+  it('awards a wheelie without resetting combo', () => {
+    const s = new Scoring();
+    s.nearMiss(80);
+    const b = s.trick('wheelie', 0.5);
+    expect(b.kind).toBe('trick');
+    expect(b.label).toBe('Wheelie');
+    expect(s.combo).toBe(1);
+    expect(s.bonusPoints).toBeGreaterThan(80);
+  });
+
+  it('keeps combo through a stoppie brake', () => {
+    const s = new Scoring();
+    s.nearMiss(70);
+    s.update(0.1, 0, 70, 'asphalt', true, 0, { keepComboOnBrake: true });
+    expect(s.combo).toBe(1);
+  });
 });
 
 describe('plausibleScore', () => {

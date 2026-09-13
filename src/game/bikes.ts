@@ -8,7 +8,8 @@
 import { BIKE, GEAR_THRESHOLDS_KMH } from '../core/config';
 
 export type BikeFamily = 'scram' | 'heritage' | 'roadster' | 'cruiser' | 'adventure' | 'cafe';
-export type BikeCategory = 'scrambler' | 'heritage' | 'roadster' | 'cruiser' | 'adventure' | 'sport';
+export type BikeCategory =
+  'scrambler' | 'heritage' | 'roadster' | 'cruiser' | 'adventure' | 'sport';
 export type BikeEngine = 'single' | 'twin';
 
 export interface BikeChassis {

@@ -480,7 +480,12 @@ function buildGeometry(type: VegType, tintMode?: VegLayer['tint']): Built {
       for (let i = 0; i < pos.count; i++) {
         const k = 0.9 + Math.random() * 0.2;
         const y = pos.getY(i);
-        pos.setXYZ(i, pos.getX(i) * k * (TEA_SEG / 2 + 0.3), Math.min(y * 0.55, 0.42) * k, pos.getZ(i) * k * 0.62);
+        pos.setXYZ(
+          i,
+          pos.getX(i) * k * (TEA_SEG / 2 + 0.3),
+          Math.min(y * 0.55, 0.42) * k,
+          pos.getZ(i) * k * 0.62,
+        );
       }
       g.computeVertexNormals();
       g.translate(0, 0.4, 0);
@@ -603,7 +608,11 @@ function buildGeometry(type: VegType, tintMode?: VegLayer['tint']): Built {
       // Mani wall: long low rubble wall topped with carved slate slabs.
       const parts = [box(3.4, 0.9, 1.0, 0x8b8072, 0.25, 0, 0.45, 0)];
       for (let i = 0; i < 9; i++) {
-        const slab = colorize(new BoxGeometry(0.42, 0.34, 0.05), pick([0x5a5651, 0x6b655c, 0x4c4a48]), 0.15);
+        const slab = colorize(
+          new BoxGeometry(0.42, 0.34, 0.05),
+          pick([0x5a5651, 0x6b655c, 0x4c4a48]),
+          0.15,
+        );
         slab.rotateX(-0.25 + Math.random() * 0.2);
         slab.rotateY((Math.random() - 0.5) * 0.4);
         slab.translate(-1.5 + i * 0.37, 1.05, (Math.random() - 0.5) * 0.5);
@@ -677,7 +686,8 @@ function buildGeometry(type: VegType, tintMode?: VegLayer['tint']): Built {
     case 'railing': {
       // White cliff-edge railing, 8 m: posts every 2 m with two rails.
       const parts: BufferGeometry[] = [];
-      for (let i = 0; i <= 4; i++) parts.push(box(0.09, 1.05, 0.09, 0xe8e6df, -4 + i * 2, 0.52, 0, 0.05));
+      for (let i = 0; i <= 4; i++)
+        parts.push(box(0.09, 1.05, 0.09, 0xe8e6df, -4 + i * 2, 0.52, 0, 0.05));
       parts.push(box(8, 0.06, 0.06, 0xe8e6df, 0, 1.0, 0, 0.05));
       parts.push(box(8, 0.06, 0.06, 0xe8e6df, 0, 0.55, 0, 0.05));
       return { geometry: merge(parts), material: stdMat({ roughness: 0.6 }), castShadow: true };

@@ -19,6 +19,53 @@ const KIND_COLOR: Record<Checkpoint['kind'], string> = {
   finish: '#ff5a1f',
 };
 
+function landmark(kind: Checkpoint['prop'] | null): Group | null {
+  if (!kind) return null;
+  const g = new Group();
+  const wood = new MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.9 });
+  const stone = new MeshStandardMaterial({ color: 0x9a9488, roughness: 0.85 });
+  const white = new MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.7 });
+  if (kind === 'shack') {
+    const hut = new Mesh(new BoxGeometry(3.2, 2.2, 2.6), wood);
+    hut.position.y = 1.1;
+    const roof = new Mesh(
+      new BoxGeometry(3.8, 0.16, 3.1),
+      new MeshStandardMaterial({ color: 0xc45a2a, roughness: 0.8 }),
+    );
+    roof.position.y = 2.3;
+    roof.rotation.z = 0.08;
+    g.add(hut, roof);
+  } else if (kind === 'chorten') {
+    const base = new Mesh(new BoxGeometry(1.6, 0.5, 1.6), white);
+    base.position.y = 0.25;
+    const spire = new Mesh(new CylinderGeometry(0.12, 0.45, 2.4, 8), white);
+    spire.position.y = 1.6;
+    g.add(base, spire);
+  } else if (kind === 'rail') {
+    for (const x of [-1.2, 1.2]) {
+      const p = new Mesh(new CylinderGeometry(0.06, 0.07, 1.1, 6), stone);
+      p.position.set(x, 0.55, 0);
+      g.add(p);
+    }
+    const rail = new Mesh(new BoxGeometry(2.6, 0.08, 0.08), stone);
+    rail.position.y = 1.05;
+    g.add(rail);
+  } else if (kind === 'arch') {
+    const left = new Mesh(new BoxGeometry(0.35, 3.2, 0.35), stone);
+    left.position.set(-1.6, 1.6, 0);
+    const right = left.clone();
+    right.position.x = 1.6;
+    const beam = new Mesh(new BoxGeometry(3.6, 0.3, 0.4), stone);
+    beam.position.y = 3.3;
+    g.add(left, right, beam);
+  }
+  g.traverse((o) => {
+    const m = o as Mesh;
+    if (m.isMesh) m.castShadow = true;
+  });
+  return g;
+}
+
 function bannerTexture(c: Checkpoint): CanvasTexture {
   const w = 1024;
   const h = 256;
@@ -94,6 +141,27 @@ export class Gates {
       banner.castShadow = true;
       gate.add(banner);
       this.disposables.push(tex, bannerMat, banner.geometry);
+      const hero = landmark(
+        c.prop ??
+          (c.kind === 'dhaba'
+            ? 'shack'
+            : c.kind === 'pass'
+              ? 'chorten'
+              : c.kind === 'view'
+                ? 'rail'
+                : null),
+      );
+      if (hero) {
+        hero.position.set(halfW + 2.2, 0, 0);
+        gate.add(hero);
+        hero.traverse((o) => {
+          const m = o as Mesh;
+          if (m.isMesh) {
+            this.disposables.push(m.geometry);
+            if (!Array.isArray(m.material)) this.disposables.push(m.material);
+          }
+        });
+      }
       this.group.add(gate);
     }
   }

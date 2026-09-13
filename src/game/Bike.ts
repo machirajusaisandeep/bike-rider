@@ -520,7 +520,7 @@ export class Bike {
     M.flameAccent.color.set(accent);
   }
 
-  private setTankLabel(name: string): void {
+  setTankLabel(name: string): void {
     const side = paintTankSide(name);
     const top = paintTankTop();
     this.mats.tankSide.map?.dispose();

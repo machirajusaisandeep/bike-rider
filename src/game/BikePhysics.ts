@@ -39,6 +39,14 @@ export class BikePhysics {
   tune = { power: 1, brakes: 1, grip: 1, offroad: 1 };
   /** Selected bike's chassis. Defaults to the starter Scram. */
   chassis: BikeChassis = { ...DEFAULT_CHASSIS, seat: { ...DEFAULT_CHASSIS.seat } };
+  /** 0..1 visual wheelie / stoppie. */
+  wheelie = 0;
+  stoppie = 0;
+  private wheelieHold = 0;
+  private stoppieHold = 0;
+  /** True for one frame when a scored trick just completed. */
+  trickEvent: 'wheelie' | 'stoppie' | null = null;
+  trickDuration = 0;
 
   readonly forward = new Vector3(0, 0, -1);
 
@@ -55,6 +63,11 @@ export class BikePhysics {
     this.lean = 0;
     this.yawRate = 0;
     this.crashed = false;
+    this.wheelie = 0;
+    this.stoppie = 0;
+    this.wheelieHold = 0;
+    this.stoppieHold = 0;
+    this.trickEvent = null;
     this.updateForward();
     this.position.y = this.heightAt(x, z);
   }
@@ -178,10 +191,7 @@ export class BikePhysics {
     const latMax =
       BIKE.gravity * (BIKE.latGripLow + (BIKE.latGripHigh - BIKE.latGripLow) * smoothstep(ratio));
     const v2 = Math.max(0.25, this.speed * this.speed);
-    const maxSteer = Math.min(
-      BIKE.steerMaxLow,
-      Math.atan((latMax * this.chassis.wheelbase) / v2),
-    );
+    const maxSteer = Math.min(BIKE.steerMaxLow, Math.atan((latMax * this.chassis.wheelbase) / v2));
     const targetSteer = input.steer * maxSteer;
     this.steerAngle += (targetSteer - this.steerAngle) * Math.min(1, BIKE.steerResponse * dt);
 
@@ -216,7 +226,46 @@ export class BikePhysics {
     const hr = this.heightAt(rx, rz);
     this.position.y = (hf + hr) / 2;
     const targetPitch = Math.atan2(hf - hr, this.chassis.wheelbase);
-    this.pitch += (targetPitch - this.pitch) * Math.min(1, 10 * dt);
+    this.trickEvent = null;
+    this.updateTricks(dt, input, absV);
+    const extra = this.wheelie * 0.18 - this.stoppie * 0.12;
+    this.pitch += (targetPitch + extra - this.pitch) * Math.min(1, 10 * dt);
+  }
+
+  private updateTricks(dt: number, input: InputState, absV: number): void {
+    const kmh = absV * 3.6;
+    const accelScale = clamp(this.chassis.accel / 6.5, 0.75, 1.35);
+    const canWheelie = input.throttle > 0.95 && kmh > 12 && kmh < 55 && Math.abs(input.steer) < 0.2;
+    if (canWheelie) {
+      this.wheelieHold += dt * accelScale;
+      if (this.wheelieHold > 0.35) this.wheelie = clamp((this.wheelieHold - 0.35) / 0.4, 0, 1);
+      if (this.wheelieHold > 1.4 || Math.abs(input.steer) > 0.35) {
+        this.trickEvent = this.wheelie > 0.3 ? 'wheelie' : null;
+        this.trickDuration = this.wheelieHold;
+        this.impulse(input.steer >= 0 ? 1 : -1, 0.35);
+        this.wheelie = 0;
+        this.wheelieHold = 0;
+      }
+    } else {
+      if (this.wheelie > 0.35) {
+        this.trickEvent = 'wheelie';
+        this.trickDuration = this.wheelieHold;
+      }
+      this.wheelieHold = 0;
+      this.wheelie += (0 - this.wheelie) * Math.min(1, 8 * dt);
+    }
+    const canStoppie = (input.brake > 0.9 || input.handbrake) && kmh > 25;
+    if (canStoppie) {
+      this.stoppieHold += dt;
+      if (this.stoppieHold > 0.25) this.stoppie = clamp((this.stoppieHold - 0.25) / 0.3, 0, 1);
+    } else {
+      if (this.stoppie > 0.35) {
+        this.trickEvent = this.trickEvent ?? 'stoppie';
+        this.trickDuration = this.stoppieHold;
+      }
+      this.stoppieHold = 0;
+      this.stoppie += (0 - this.stoppie) * Math.min(1, 8 * dt);
+    }
   }
 
   private updateCrash(dt: number): void {

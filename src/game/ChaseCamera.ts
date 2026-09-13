@@ -23,12 +23,13 @@ const _desired = new Vector3();
 const _look = new Vector3();
 const _right = new Vector3();
 
-export const CAMERA_MODES: CameraMode[] = ['chase', 'cockpit', 'cinematic'];
+export const CAMERA_MODES: CameraMode[] = ['chase', 'cockpit', 'cinematic', 'tank'];
 
 export const CAMERA_LABELS: Record<CameraMode, string> = {
   chase: 'Chase',
   cockpit: 'Cockpit',
   cinematic: 'Cinematic',
+  tank: 'Tank',
 };
 
 export class ChaseCamera {
@@ -129,6 +130,14 @@ export class ChaseCamera {
         _desired.addScaledVector(_right, bike.lean * 0.25);
         _target.copy(bike.position).addScaledVector(fwd, 12);
         _target.y = bike.position.y + 0.9 + ratio * 0.5 - Math.sin(bike.pitch) * 6;
+        break;
+      }
+      case 'tank': {
+        _desired.copy(bike.position).addScaledVector(fwd, 0.35);
+        _desired.y = bike.position.y + 1.05;
+        _desired.addScaledVector(_right, bike.lean * 0.12);
+        _target.copy(bike.position).addScaledVector(fwd, 14);
+        _target.y = bike.position.y + 0.7 + ratio * 0.35;
         break;
       }
       case 'cinematic': {

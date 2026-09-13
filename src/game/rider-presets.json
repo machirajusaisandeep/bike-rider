@@ -1,64 +1,191 @@
 {
+  "morphNames": [
+    "face_round",
+    "face_long",
+    "jaw_wide",
+    "jaw_narrow",
+    "cheekbones_high",
+    "cheeks_full",
+    "brow_heavy",
+    "nose_broad",
+    "nose_bridge",
+    "nose_tip_down",
+    "lips_full",
+    "eyes_large",
+    "eyes_almond",
+    "lids_heavy"
+  ],
   "faces": {
     "male": [
-      { "id": "arjun", "name": "Arjun", "morphs": {} },
-      { "id": "vikram", "name": "Vikram", "morphs": { "jaw_wide": 1.0, "brow_heavy": 0.6 } },
-      { "id": "rahul", "name": "Rahul", "morphs": { "cheeks_full": 0.9, "chin_long": 0.3 } },
-      { "id": "dev", "name": "Dev", "morphs": { "nose_big": 0.9, "jaw_narrow": 0.5 } },
+      {
+        "id": "arjun",
+        "name": "Arjun",
+        "region": "Delhi",
+        "morphs": { "nose_bridge": 0.3, "lips_full": 0.25, "brow_heavy": 0.2 }
+      },
+      {
+        "id": "vikram",
+        "name": "Vikram",
+        "region": "Punjab",
+        "morphs": { "jaw_wide": 0.8, "brow_heavy": 0.6, "nose_bridge": 0.5, "face_long": 0.3 }
+      },
+      {
+        "id": "rahul",
+        "name": "Rahul",
+        "region": "Gujarat",
+        "morphs": { "face_round": 0.5, "cheeks_full": 0.5, "nose_broad": 0.3, "lips_full": 0.2 }
+      },
+      {
+        "id": "dev",
+        "name": "Dev",
+        "region": "Tamil Nadu",
+        "morphs": { "nose_broad": 0.7, "lips_full": 0.6, "face_round": 0.3, "cheekbones_high": 0.3 }
+      },
       {
         "id": "kabir",
         "name": "Kabir",
-        "morphs": { "brow_heavy": 1.0, "jaw_wide": 0.5, "chin_long": 0.7 }
+        "region": "Uttar Pradesh",
+        "morphs": { "nose_tip_down": 0.7, "nose_bridge": 0.6, "face_long": 0.5, "brow_heavy": 0.5 }
       },
       {
         "id": "ishaan",
         "name": "Ishaan",
-        "morphs": { "jaw_narrow": 0.8, "cheeks_full": 0.3, "nose_big": 0.3 }
+        "region": "Bengal",
+        "morphs": { "eyes_large": 0.4, "jaw_narrow": 0.5, "lips_full": 0.4, "cheekbones_high": 0.4 }
+      },
+      {
+        "id": "tenzin",
+        "name": "Tenzin",
+        "region": "Ladakh",
+        "morphs": {
+          "eyes_almond": 0.9,
+          "lids_heavy": 0.8,
+          "cheekbones_high": 0.7,
+          "nose_bridge": -0.5,
+          "face_round": 0.4
+        }
+      },
+      {
+        "id": "karthik",
+        "name": "Karthik",
+        "region": "Kerala",
+        "morphs": { "face_long": 0.3, "nose_broad": 0.5, "lips_full": 0.5, "brow_heavy": 0.4 }
       }
     ],
     "female": [
-      { "id": "ananya", "name": "Ananya", "morphs": {} },
-      { "id": "meera", "name": "Meera", "morphs": { "cheeks_full": 0.9 } },
-      { "id": "diya", "name": "Diya", "morphs": { "jaw_narrow": 0.8, "chin_long": 0.5 } },
-      { "id": "riya", "name": "Riya", "morphs": { "brow_heavy": 0.5, "nose_big": 0.6 } },
-      { "id": "sana", "name": "Sana", "morphs": { "jaw_wide": 0.7, "cheeks_full": 0.3 } },
+      {
+        "id": "ananya",
+        "name": "Ananya",
+        "region": "Bengaluru",
+        "morphs": { "eyes_large": 0.2, "lips_full": 0.3, "nose_bridge": 0.2 }
+      },
+      {
+        "id": "meera",
+        "name": "Meera",
+        "region": "Rajasthan",
+        "morphs": { "face_round": 0.6, "cheeks_full": 0.5, "lips_full": 0.2 }
+      },
+      {
+        "id": "diya",
+        "name": "Diya",
+        "region": "Punjab",
+        "morphs": { "face_long": 0.4, "nose_bridge": 0.5, "jaw_narrow": 0.5 }
+      },
+      {
+        "id": "riya",
+        "name": "Riya",
+        "region": "Bengal",
+        "morphs": { "eyes_large": 0.5, "lips_full": 0.5, "cheekbones_high": 0.3 }
+      },
+      {
+        "id": "sana",
+        "name": "Sana",
+        "region": "Kashmir",
+        "morphs": { "nose_bridge": 0.6, "eyes_large": 0.3, "jaw_narrow": 0.4 }
+      },
       {
         "id": "kavya",
         "name": "Kavya",
-        "morphs": { "chin_long": 0.6, "cheeks_full": 0.5, "nose_big": 0.3 }
+        "region": "Tamil Nadu",
+        "morphs": { "nose_broad": 0.5, "lips_full": 0.6, "cheekbones_high": 0.4 }
+      },
+      {
+        "id": "lakshmi",
+        "name": "Lakshmi",
+        "region": "Andhra",
+        "morphs": { "face_round": 0.5, "nose_broad": 0.6, "eyes_large": 0.4, "lips_full": 0.3 }
+      },
+      {
+        "id": "pema",
+        "name": "Pema",
+        "region": "Sikkim",
+        "morphs": {
+          "eyes_almond": 0.9,
+          "lids_heavy": 0.7,
+          "cheekbones_high": 0.6,
+          "nose_bridge": -0.4,
+          "face_round": 0.3
+        }
       }
     ]
   },
   "hair": {
-    "male": ["crop", "buzz", "side", "quiff", "curly", "long", "bald"],
-    "female": ["long", "ponytail", "bun", "side", "crop", "curly", "buzz"]
+    "male": [
+      "crop",
+      "side",
+      "slick",
+      "undercut",
+      "curly",
+      "quiff",
+      "buzz",
+      "long",
+      "turban",
+      "bald"
+    ],
+    "female": ["long", "braid", "bun", "bob", "ponytail", "curly", "side", "crop", "buzz"]
   },
+  "hairOut": ["long", "braid", "ponytail"],
   "hairNames": {
     "crop": "Crop",
     "buzz": "Buzz cut",
     "side": "Side part",
+    "slick": "Slick back",
+    "undercut": "Undercut",
     "quiff": "Quiff",
     "curly": "Curly",
     "long": "Long",
     "ponytail": "Ponytail",
-    "bun": "Bun",
+    "braid": "Braid",
+    "bun": "Low bun",
+    "bob": "Bob",
+    "turban": "Turban",
     "bald": "Shaved"
   },
   "hairColors": [
-    { "id": "black", "hex": "#15110f" },
-    { "id": "darkbrown", "hex": "#2e1f16" },
-    { "id": "brown", "hex": "#5a3a24" },
-    { "id": "auburn", "hex": "#7a3b22" },
-    { "id": "grey", "hex": "#8d8a86" },
-    { "id": "blonde", "hex": "#b48a4e" }
+    { "id": "black", "hex": "#15110f", "name": "Jet black" },
+    { "id": "softblack", "hex": "#221a16", "name": "Black" },
+    { "id": "darkbrown", "hex": "#2e1f16", "name": "Dark brown" },
+    { "id": "henna", "hex": "#6a3a1e", "name": "Henna" },
+    { "id": "saltpepper", "hex": "#6f6862", "name": "Salt and pepper" },
+    { "id": "white", "hex": "#d8d3cb", "name": "White" }
+  ],
+  "turbanColors": [
+    { "id": "saffron", "hex": "#e8730a", "name": "Saffron" },
+    { "id": "navy", "hex": "#1f2a5a", "name": "Navy" },
+    { "id": "maroon", "hex": "#7b1d2a", "name": "Maroon" },
+    { "id": "white", "hex": "#e9e4d8", "name": "White" },
+    { "id": "royal", "hex": "#1d4fa3", "name": "Royal blue" },
+    { "id": "black", "hex": "#1a1a1a", "name": "Black" }
   ],
   "skinTones": [
-    { "id": "s1", "hex": "#f1c9a5" },
-    { "id": "s2", "hex": "#dfae86" },
-    { "id": "s3", "hex": "#c8916a" },
-    { "id": "s4", "hex": "#a9714c" },
-    { "id": "s5", "hex": "#8a5a3a" },
-    { "id": "s6", "hex": "#5e3b25" }
+    { "id": "s1", "hex": "#e9c19b" },
+    { "id": "s2", "hex": "#d3a37a" },
+    { "id": "s3", "hex": "#bb885c" },
+    { "id": "s4", "hex": "#9e6d47" },
+    { "id": "s5", "hex": "#7d5233" },
+    { "id": "s6", "hex": "#5a3924" }
   ],
-  "beards": ["none", "stubble", "full"]
+  "beards": ["none", "stubble", "moustache", "full"],
+  "bindis": ["none", "red", "black"],
+  "earrings": ["none", "studs", "jhumka"]
 }

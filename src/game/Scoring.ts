@@ -26,7 +26,9 @@ const CORNER_MIN_YAW = 0.28; // rad/s
 const CORNER_MIN_KMH = 50;
 const CORNER_MIN_S = 0.8;
 
-export type BonusKind = 'nearMiss' | 'corner' | 'speed';
+export type BonusKind = 'nearMiss' | 'corner' | 'speed' | 'trick' | 'draft';
+export const DRAFT_PER_S = 10;
+export const TRICK_BASE = 80;
 
 export interface Bonus {
   kind: BonusKind;
@@ -91,6 +93,7 @@ export class Scoring {
     surface: Surface,
     braking: boolean,
     yawRate: number,
+    opts: { keepComboOnBrake?: boolean; drafting?: boolean } = {},
   ): Bonus | null {
     const d = Math.max(0, distanceM) * SURFACE_MULT[surface];
     this.distancePoints += d;
@@ -102,7 +105,13 @@ export class Scoring {
       this.comboTimer -= dt;
       if (this.comboTimer <= 0) this.combo = 0;
     }
-    if (braking && this.combo > 0) this.combo = 0;
+    if (braking && this.combo > 0 && !opts.keepComboOnBrake) this.combo = 0;
+
+    if (opts.drafting) {
+      const pts = DRAFT_PER_S * dt;
+      this.bonusPoints += pts;
+      this.score += pts;
+    }
 
     if (speedKmh >= SPEED_BONUS_KMH) {
       const before = Math.floor(this.speedSeconds);
@@ -153,6 +162,18 @@ export class Scoring {
       points: pts,
       combo: this.combo,
       label: this.combo > 1 ? `Near miss ×${this.combo}` : 'Near miss',
+    };
+  }
+
+  trick(kind: 'wheelie' | 'stoppie', duration: number): Bonus {
+    const pts = Math.round(TRICK_BASE + Math.min(1.2, duration) * 100);
+    this.bonusPoints += pts;
+    this.score += pts;
+    return {
+      kind: 'trick',
+      points: pts,
+      combo: this.combo,
+      label: kind === 'wheelie' ? 'Wheelie' : 'Stoppie',
     };
   }
 

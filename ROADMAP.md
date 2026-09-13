@@ -1,6 +1,6 @@
 # Bike Rider — Roadmap to a shippable, shareable game
 
-_Last updated: 2026-09-05. Companion to `PLAN.md` (which covers the original free-ride build)._
+_Last updated: 2026-09-05. Companion to `PLAN.md` (original free-ride build) and `docs/JUICE.md` (next pass)._
 
 ## Status (2026-09-05)
 
@@ -12,8 +12,9 @@ _Last updated: 2026-09-05. Companion to `PLAN.md` (which covers the original fre
 | 3 Retention         | **Done**              | 48 missions, coins + upgrades + bikes, monsoon/fog/snow, photo mode                                                    |
 | 4 Indian angle      | **Done** (v1)         | Six named routes with gates and dhabas, 5-language UI, replay clip, group-ride ghosts on the daily                     |
 | 5 Distribution      | **Ready**             | Portal SDK adapter (Poki / CrazyGames), itch zip script, OG tags, `docs/LAUNCH.md`. Submissions are a human step       |
+| 6 Juice             | **Done**              | Horn, visor, skids, audio beds, ghost splits, livery, quality governor, wheelie/gamepad. See `docs/JUICE.md`           |
 
-Not built yet: real-time multiplayer, open world, wheelies/horn (backlog by design).
+Not built yet: real-time multiplayer, open world. Horn / wheelie / gamepad / visor are scheduled in Phase 6.
 
 ## Where we are
 
@@ -281,11 +282,29 @@ Instrument these from Phase 0:
 
 ---
 
-## Backlog (not scheduled)
+## Phase 6 — Juice (scheduled)
 
-- Steering wheel / gamepad support (`navigator.getGamepads`, trivial with the current `Input`).
-- Wheelie and stoppie on throttle/brake at low speed (score bonus).
-- Horn key. Cows move when honked. Players will love it more than any feature above.
-- Cockpit-camera helmet visor overlay that fogs in rain.
+Feel, traffic personality, presentation. Full file-level plan: `docs/JUICE.md`.
+
+Do **not** rebuild traffic filter/lane-change, night lamps, garage showroom, or the scene visual pass — those are already in the tree.
+
+| Slice | What | Status |
+| --- | --- | --- |
+| 0 | This roadmap + `docs/JUICE.md` | **Done** |
+| 1 | Horn (`H`) + cows/autos react; per-instance brake lights and oncoming flash | **Done** |
+| 2 | Rider crash dump, cockpit visor, skid marks | **Done** |
+| 3 | Layered audio: wind, gear thunk, place beds, dhaba radio | **Done** |
+| 4 | PB ghost splits + rubber-band daily pack | **Done** |
+| 5 | Paint / plate / orbit / test ride (garage layout stays) | **Done** |
+| 6 | Auto quality governor (median frame time) | **Done** |
+| 7 | Wheelie / stoppie score spice + gamepad + haptics | **Done** |
+| 8 | Route weather/time, gate landmarks, draft, minimap, tank cam, 9:16 share | **Done** |
+
+Order: 0 → 1 → 2 → 3 → 4 → 6 (if phones hitch) → 5 → 7 → 8.
+
+## Later (not scheduled)
+
 - Save profile to Supabase behind an optional magic-link login.
 - Real-time 2–4 player rooms (only after D7 targets are met).
+- Open world / OSM India.
+- Gear-stat coupling (rain jacket +wet grip) — leftover from Phase 3.2.

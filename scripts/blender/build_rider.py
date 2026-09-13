@@ -3,62 +3,86 @@ Build a rigged, riding-posed rider GLB from Blender Studio's CC0 Human Base Mesh
 
   Blender -b human_base_meshes_bundle.blend --python build_rider.py -- male out/rider_male.glb presets.json thumbs_dir
 
-Outputs a Draco-compressed GLB with: skinned body + eyes, face shape keys (morph targets), hair
-styles / brows / beard shells, gear shells (jackets, gloves, elbow and knee guards, boots,
-helmets), two single-frame clips ("Stand", "Ride"), and renders face / hair thumbnails.
+Outputs a Draco-compressed GLB with: skinned body (baked skin albedo + roughness textures), eyes
+(sclera, iris, cornea, lashes), Indian-centred face shape keys (morph targets, also carried by
+the brow, lash, kajal and beard shells), hair styles, turban, accents (bindi, earrings), gear
+shells (jackets, gloves, elbow and knee guards, boots, helmets), two single-frame clips ("Stand",
+"Ride"), and renders face / hair thumbnails with EEVEE.
+
+The work is split into modules executed with the builder's globals:
+  rider_face.py      morph fields, skin bake, eyes, lashes, kajal, brows, beards, accents
+  rider_wardrobe.py  riding gear fitted to the body
+  rider_hair.py      hairline, hair volumes, braid, ponytail, bun, turban
+  rider_thumbs.py    EEVEE thumbnails
+
+Env: RIDER_SCRATCH  directory for baked textures (default: <out dir>/.rider-bake)
 """
-import bpy, bmesh, sys, json, math, os
-from mathutils import Vector, Euler
+import bpy, bmesh, sys, json, math, os, runpy
+from mathutils import Vector, Euler, Matrix
+from mathutils.kdtree import KDTree
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 GENDER, OUT, PRESETS, THUMBS = argv[0], argv[1], argv[2], argv[3]
 presets = json.load(open(PRESETS))
-os.makedirs(os.path.dirname(OUT), exist_ok=True)
+os.makedirs(os.path.dirname(OUT) or '.', exist_ok=True)
 os.makedirs(THUMBS, exist_ok=True)
+SCRATCH = os.environ.get('RIDER_SCRATCH', os.path.join(os.path.dirname(OUT) or '.', '.rider-bake'))
+os.makedirs(SCRATCH, exist_ok=True)
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 scene = bpy.context.scene
 BODY_NAME = 'GEO-body_male_realistic' if GENDER == 'male' else 'GEO-body_female_realistic'
 body = bpy.data.objects[BODY_NAME]
-eyes = [o for o in bpy.data.objects if o.parent == body and o.type == 'MESH']
+bundle_eyes = [o for o in bpy.data.objects if o.parent == body and o.type == 'MESH']
+
+# The bundle eyes carry a parent-inverse matrix and a rotation that the glTF exporter ignores for
+# skinned parts but Blender honours, which displaced the female thumbnails. Measure them in world
+# space, then discard them; rider_face.py builds our own eyes at the measured centres.
+def world_centroid(o):
+    return sum((o.matrix_world @ v.co for v in o.data.vertices), Vector()) / len(o.data.vertices)
+EYE_WORLD = {}
+EYE_R = 0.012
+for e in bundle_eyes:
+    c = world_centroid(e)
+    zs = [(e.matrix_world @ v.co).z for v in e.data.vertices]
+    EYE_R = (max(zs) - min(zs)) / 2
+    EYE_WORLD['L' if c.x > body.matrix_world.translation.x else 'R'] = c
+assert len(EYE_WORLD) == 2, 'expected two bundle eyes'
 
 # ------------------------------------------------------------------ isolate + normalise ----
-keep = {body.name, *[e.name for e in eyes]}
 for o in list(bpy.data.objects):
-    if o.name not in keep:
+    if o.name != body.name:
         bpy.data.objects.remove(o, do_unlink=True)
 for c in list(bpy.data.collections):
     bpy.data.collections.remove(c)
-for o in [body] + eyes:
-    if o.name not in scene.collection.objects:
-        scene.collection.objects.link(o)
-    o.hide_set(False); o.hide_viewport = False; o.hide_render = False
-
-for o in [body] + eyes:
-    mw = o.matrix_world.copy()
-    o.parent = None
-    o.matrix_world = mw
+if body.name not in scene.collection.objects:
+    scene.collection.objects.link(body)
+body.hide_set(False); body.hide_viewport = False; body.hide_render = False
+body.parent = None
 for md in list(body.modifiers):
     body.modifiers.remove(md)
+# Refine the base before creating morphs so the face and every expression share topology.
+bpy.context.view_layer.objects.active = body
+sub = body.modifiers.new('Face topology', 'SUBSURF')
+sub.levels = 1
+bpy.ops.object.modifier_apply(modifier=sub.name)
 
 def sel(objs, active=None):
     bpy.ops.object.select_all(action='DESELECT')
     for o in objs: o.select_set(True)
     bpy.context.view_layer.objects.active = active or objs[0]
 
-sel([body] + eyes, body)
+sel([body], body)
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 vs = [v.co for v in body.data.vertices]
 cx = sum(v.x for v in vs) / len(vs)
 minz = min(v.z for v in vs)
-for o in [body] + eyes:
-    for v in o.data.vertices:
-        v.co.x -= cx; v.co.z -= minz
+SHIFT = Vector((cx, 0, minz))
+for v in body.data.vertices:
+    v.co -= SHIFT
 body.data.update()
-for e in eyes: e.data.update()
 body.name = 'Body'
-eyes.sort(key=lambda e: -sum(v.co.x for v in e.data.vertices))
-for e, nm in zip(eyes, ('Eye.L', 'Eye.R')):
-    e.name = nm
+EYE_C = {k: c - SHIFT for k, c in EYE_WORLD.items()}
 
 verts = [v.co.copy() for v in body.data.vertices]
 H = max(v.z for v in verts)
@@ -72,15 +96,15 @@ def halfwidth(z):
     return max(abs(v.x) for v in pts(z))
 
 # landmarks
-eyeL = [e for e in eyes if centroid([v.co for v in e.data.vertices]).x > 0][0]
-eye_c = centroid([v.co for v in eyeL.data.vertices])
+eye_c = EYE_C['L']
 EYE_Z = eye_c.z
 EYE_X = abs(eye_c.x)
+EYE_Y = eye_c.y
 head_pts = [v for v in verts if v.z > 0.9 * H]
 HEAD_YMIN = min(v.y for v in head_pts)  # face front (nose tip)
 HEAD_YMAX = max(v.y for v in head_pts)  # back of skull
 HEAD_Y = (HEAD_YMIN + HEAD_YMAX) / 2
-print(f'[rider] head y: front {HEAD_YMIN:.3f} centre {HEAD_Y:.3f} back {HEAD_YMAX:.3f}; eye z {EYE_Z:.3f} x {EYE_X:.3f}')
+print(f'[rider] head y: front {HEAD_YMIN:.3f} centre {HEAD_Y:.3f} back {HEAD_YMAX:.3f}; eye z {EYE_Z:.3f} x {EYE_X:.3f} y {EYE_Y:.3f} r {EYE_R:.4f}')
 CHIN_Z = 0.887 * H
 NECK_Z = 0.855 * H
 SHOULDER_Z, ELBOW_Z, WRIST_Z, HANDTIP_Z = 0.83 * H, 0.645 * H, 0.535 * H, 0.445 * H
@@ -150,13 +174,28 @@ print('[rider] auto weights ok, groups:', len(body.vertex_groups))
 
 def rig_to(obj, group):
     """Attach a rigid object to one bone via a full-weight vertex group + armature modifier."""
-    vg = obj.vertex_groups.new(name=group)
+    vg = obj.vertex_groups.get(group) or obj.vertex_groups.new(name=group)
     vg.add([v.index for v in obj.data.vertices], 1.0, 'REPLACE')
     md = obj.modifiers.new('Armature', 'ARMATURE')
     md.object = rig
     obj.parent = rig
-for e in eyes:
-    rig_to(e, 'head')
+    obj.matrix_parent_inverse.identity()
+
+# Body KDTree + normals, shared by the face, wardrobe and hair modules.
+tree = KDTree(len(body.data.vertices))
+for v in body.data.vertices:
+    tree.insert(v.co, v.index)
+tree.balance()
+body_normal = [v.normal.copy() for v in body.data.vertices]
+
+def skin_offset(p, clearance):
+    """Move p so it sits at least `clearance` outside the nearest body vertex along its normal."""
+    co, idx, d = tree.find(p)
+    n = body_normal[idx]
+    h = (p - co).dot(n)
+    if h < clearance:
+        p = p + n * (clearance - h)
+    return p
 
 # ------------------------------------------------------------------ materials ----------
 def material(name, color, rough=0.6, metal=0.0, alpha=1.0):
@@ -168,21 +207,21 @@ def material(name, color, rough=0.6, metal=0.0, alpha=1.0):
     bsdf.inputs['Metallic'].default_value = metal
     if alpha < 1:
         bsdf.inputs['Alpha'].default_value = alpha
-        m.blend_method = 'BLEND'
+        m.surface_render_method = 'DITHERED'
     m.diffuse_color = (*color, alpha)
     return m
 def hexc(h):
     h = h.lstrip('#'); return tuple(int(h[i:i+2], 16) / 255 for i in (0, 2, 4))
 def lin(c):  # sRGB -> linear for node colours
     return tuple(((v + 0.055) / 1.055) ** 2.4 if v > 0.04045 else v / 12.92 for v in c)
+SKIN_DEFAULT = next((s['hex'] for s in presets['skinTones'] if s['id'] == 's3'), '#bb885c')
 M = {
-    'skin': material('skin', lin(hexc('#c8916a')), 0.55),
+    'skin': material('skin', lin(hexc(SKIN_DEFAULT)), 0.55),
     'shirt': material('shirt', lin(hexc('#e8e3d6')), 0.9),
     'pants': material('pants', lin(hexc('#2b3a5a')), 0.95),
-    'eye': material('eye', (0.9, 0.9, 0.9), 0.2),
-    'hair': material('hair', lin(hexc('#2e1f16')), 0.7),
-    'brow': material('brow', lin(hexc('#2e1f16')), 0.8),
-    'beard': material('beard', lin(hexc('#2e1f16')), 0.85),
+    'hair': material('hair', lin(hexc('#15110f')), 0.7),
+    'brow': material('brow', lin(hexc('#15110f')), 0.8),
+    'beard': material('beard', lin(hexc('#15110f')), 0.85),
     'jacket': material('jacket', lin(hexc('#b8451c')), 0.7),
     'jacket_accent': material('jacket_accent', lin(hexc('#1f2226')), 0.5),
     'gloves': material('gloves', lin(hexc('#1f2226')), 0.7),
@@ -195,48 +234,55 @@ M = {
 
 # body face materials by region: skin / shirt / pants
 body.data.materials.clear()
-for name in ('skin', 'shirt', 'pants'):
+for part in ('skin_feet', 'skin_hands', 'skin_arms'):
+    M[part] = material(part, lin(hexc(SKIN_DEFAULT)), .78)
+for name in ('skin', 'shirt', 'pants', 'skin_feet', 'skin_hands', 'skin_arms'):
     body.data.materials.append(M[name])
-for e in eyes:
-    e.data.materials.clear(); e.data.materials.append(M['eye'])
 for p in body.data.polygons:
     c = sum((body.data.vertices[i].co for i in p.vertices), Vector()) / len(p.vertices)
-    arm_region = abs(c.x) > 0.19 and c.z < SHOULDER_Z
-    if WAIST_Z - 0.02 <= c.z <= NECK_Z + 0.01 and not (arm_region and c.z < ELBOW_Z + 0.06):
+    arm_region = abs(c.x) > 0.19 and HANDTIP_Z - .03 < c.z < SHOULDER_Z
+    if c.z < ANKLE_Z + .06:
+        p.material_index = 3
+    elif arm_region and c.z < WRIST_Z + .01:
+        p.material_index = 4
+    elif arm_region and c.z < ELBOW_Z + .06:
+        p.material_index = 5
+    elif WAIST_Z - 0.02 <= c.z <= NECK_Z + 0.01:
         p.material_index = 1  # shirt (short sleeves)
     elif ANKLE_Z + 0.05 <= c.z < WAIST_Z - 0.02 and not arm_region:
         p.material_index = 2  # pants
     else:
         p.material_index = 0
 for p in body.data.polygons: p.use_smooth = True
-for e in eyes:
-    for p in e.data.polygons: p.use_smooth = True
 
-# ------------------------------------------------------------------ face shape keys -----
-sk_basis = body.shape_key_add(name='Basis')
-def add_key(name, fn):
-    k = body.shape_key_add(name=name, from_mix=False)
-    for i, v in enumerate(body.data.vertices):
-        d = fn(v.co)
-        if d is not None:
-            k.data[i].co = v.co + d
-    return k
+# ------------------------------------------------------------------ shared helpers ------
 def smooth(t): t = max(0.0, min(1.0, t)); return t * t * (3 - 2 * t)
 def bump(z, lo, hi):  # 1 in the middle of [lo,hi], 0 at the edges
     if z <= lo or z >= hi: return 0.0
     t = (z - lo) / (hi - lo); return math.sin(math.pi * t)
-FACE_FRONT = HEAD_YMIN + 0.075
-add_key('jaw_wide', lambda c: Vector((math.copysign(0.014 * bump(c.z, CHIN_Z - 0.03, EYE_Z - 0.02), c.x), 0, 0)) if c.z > CHIN_Z - 0.04 and abs(c.x) > 0.015 else None)
-add_key('jaw_narrow', lambda c: Vector((-math.copysign(0.011 * bump(c.z, CHIN_Z - 0.03, EYE_Z - 0.01), c.x), 0, 0)) if c.z > CHIN_Z - 0.04 and abs(c.x) > 0.015 else None)
-add_key('chin_long', lambda c: Vector((0, -0.003 * smooth((EYE_Z - 0.03 - c.z) / 0.06), -0.014 * smooth((EYE_Z - 0.03 - c.z) / 0.06))) if CHIN_Z - 0.05 < c.z < EYE_Z - 0.03 and c.y < HEAD_Y else None)
-add_key('nose_big', lambda c: Vector((c.x * 0.25, -0.012, -0.003)) * bump(c.z, EYE_Z - 0.065, EYE_Z + 0.005) if abs(c.x) < 0.022 and c.y < HEAD_YMIN + 0.05 and EYE_Z - 0.07 < c.z < EYE_Z + 0.01 else None)
-add_key('cheeks_full', lambda c: Vector((math.copysign(0.012, c.x), -0.006, -0.002)) * bump(c.z, EYE_Z - 0.06, EYE_Z + 0.0) * bump(abs(c.x), 0.025, 0.085) if c.y < HEAD_Y - 0.02 else None)
-add_key('brow_heavy', lambda c: Vector((0, -0.008, -0.004)) * bump(c.z, EYE_Z + 0.005, EYE_Z + 0.05) if c.y < HEAD_YMIN + 0.06 and abs(c.x) < 0.07 else None)
-body.active_shape_key_index = 0
-print('[rider] shape keys:', [k.name for k in body.data.shape_keys.key_blocks])
 
-# ------------------------------------------------------------------ region shells -------
+# Fields are authored in anatomical mm; the new Indian-feature fields read stronger at game scale,
+# the legacy jaw / cheek / brow fields were already tuned at full strength.
+MORPH_GAIN = {'jaw_wide': 1.0, 'jaw_narrow': 1.0, 'cheeks_full': 1.0, 'brow_heavy': 1.0}
+def add_field_keys(obj, fields):
+    """Shape keys from analytic displacement fields fn(co) -> Vector | None. Any mesh that gets the
+    same key names follows the face at runtime (Rider.ts drives every morph dictionary)."""
+    if not obj or obj.type != 'MESH':
+        return
+    if not obj.data.shape_keys:
+        obj.shape_key_add(name='Basis')
+    for name, fn in fields.items():
+        k = obj.shape_key_add(name=name, from_mix=False)
+        k.slider_min = -1.0
+        gain = MORPH_GAIN.get(name, 1.4)
+        for i, v in enumerate(obj.data.vertices):
+            d = fn(v.co)
+            if d is not None:
+                k.data[i].co = v.co + d * gain
+    obj.active_shape_key_index = 0
+
 def shell(name, pred, thickness, mat, min_frac=0.5, offset=1.0):
+    """Copy of the body faces selected by pred, solidified outward, skinned like the body."""
     bm = bmesh.new()
     bm.from_mesh(body.data)
     doomed = []
@@ -259,11 +305,10 @@ def shell(name, pred, thickness, mat, min_frac=0.5, offset=1.0):
     so.thickness = thickness; so.offset = offset; so.use_even_offset = False; so.use_rim = True
     sel([obj], obj)
     bpy.ops.object.modifier_apply(modifier='Solidify')
-    ss = obj.modifiers.new('Subsurf', 'SUBSURF'); ss.levels = 1; ss.render_levels = 1
-    bpy.ops.object.modifier_apply(modifier='Subsurf')
     for p in obj.data.polygons: p.use_smooth = True
     md = obj.modifiers.new('Armature', 'ARMATURE'); md.object = rig
     obj.parent = rig
+    obj.matrix_parent_inverse.identity()
     return obj
 
 def join(objs, name):
@@ -275,8 +320,8 @@ def join(objs, name):
     o.name = name
     return o
 
-def prim_sphere(name, center, radius, mat, group, scale=(1, 1, 1)):
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, segments=20, ring_count=12, location=center)
+def prim_sphere(name, center, radius, mat, group, scale=(1, 1, 1), segments=20, rings=12):
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, segments=segments, ring_count=rings, location=center)
     o = bpy.context.active_object
     o.name = name; o.scale = scale
     sel([o], o); bpy.ops.object.transform_apply(scale=True)
@@ -298,88 +343,49 @@ def prim_capsule(name, a, b, r, mat, group):
     rig_to(o, group)
     return o
 
-M['iris'] = material('iris', (0.12, 0.06, 0.03), 0.25)
-for e in eyes:
-    ec = sum((v.co for v in e.data.vertices), Vector()) / len(e.data.vertices)
-    prim_sphere('Iris' + e.name[3:], ec + Vector((0, -0.0118, 0)), 0.0062, M['iris'], 'head', (1, 0.35, 1))
+def eye_distance(c):
+    return min((c - EYE_C['L']).length, (c - EYE_C['R']).length)
 
-is_scalp = lambda c: c.z > EYE_Z + 0.035 and (c.y > HEAD_Y - 0.01 or c.z > EYE_Z + 0.08) and (abs(c.x) < 0.072 or c.z > EYE_Z + 0.085)
 is_face_front = lambda c: c.y < HEAD_YMIN + 0.075
-# hair styles
-hair = {}
-hair['crop'] = shell('hair_crop', is_scalp, 0.012, M['hair'])
-hair['buzz'] = shell('hair_buzz', is_scalp, 0.004, M['hair'])
-side_cap = shell('hair_side_cap', is_scalp, 0.014, M['hair'])
-side_fringe = shell('hair_side_fringe', lambda c: EYE_Z + 0.06 < c.z < EYE_Z + 0.09 and c.y < HEAD_Y - 0.03 and c.x > -0.02 and abs(c.x) < 0.07, 0.02, M['hair'])
-hair['side'] = join([side_cap, side_fringe], 'hair_side')
-quiff_cap = shell('hair_quiff_cap', is_scalp, 0.016, M['hair'])
-quiff_top = shell('hair_quiff_top', lambda c: c.z > EYE_Z + 0.09 and c.y < HEAD_Y + 0.01, 0.04, M['hair'])
-hair['quiff'] = join([quiff_cap, quiff_top], 'hair_quiff')
-curly = shell('hair_curly', is_scalp, 0.03, M['hair'])
-if curly:
-    tex = bpy.data.textures.new('curl', 'CLOUDS'); tex.noise_scale = 0.03
-    dm = curly.modifiers.new('Displace', 'DISPLACE'); dm.texture = tex; dm.strength = 0.018; dm.mid_level = 0.5
-    sel([curly], curly); bpy.ops.object.modifier_apply(modifier='Displace')
-hair['curly'] = curly
-long_cap = shell('hair_long_cap', is_scalp, 0.014, M['hair'])
-is_ear = lambda c: abs(c.x) > 0.066 and c.y < HEAD_Y + 0.055 and c.z > EYE_Z - 0.035
-long_back = shell('hair_long_back', lambda c: NECK_Z - 0.2 < c.z <= EYE_Z + 0.04 and c.y > HEAD_Y + 0.03 and abs(c.x) < 0.13 and not is_ear(c), 0.026, M['hair'])
-hair['long'] = join([long_cap, long_back], 'hair_long')
-pony_cap = shell('hair_pony_cap', is_scalp, 0.014, M['hair'])
-pony_tail = prim_capsule('hair_pony_tail', Vector((0, HEAD_YMAX + 0.01, EYE_Z + 0.03)), Vector((0, HEAD_YMAX + 0.06, NECK_Z - 0.16)), 0.028, M['hair'], 'head')
-pony_knot = prim_sphere('hair_pony_knot', Vector((0, HEAD_YMAX + 0.005, EYE_Z + 0.035)), 0.04, M['hair'], 'head')
-hair['ponytail'] = join([pony_cap, pony_tail, pony_knot], 'hair_ponytail')
-bun_cap = shell('hair_bun_cap', is_scalp, 0.014, M['hair'])
-bun = prim_sphere('hair_bun_ball', Vector((0, HEAD_YMAX + 0.01, EYE_Z + 0.075)), 0.05, M['hair'], 'head', (1, 0.9, 1))
-hair['bun'] = join([bun_cap, bun], 'hair_bun')
+is_arm = lambda c: abs(c.x) > 0.19 and HANDTIP_Z - .07 < c.z < SHOULDER_Z + 0.02
 
-brows = shell('brows', lambda c: EYE_Z + 0.02 < c.z < EYE_Z + 0.034 and 0.014 < abs(c.x) < 0.052 and c.y < HEAD_YMIN + 0.05, 0.003, M['brow'], 0.34)
-def is_beard(c):
-    if not (CHIN_Z - 0.035 < c.z < EYE_Z - 0.048 and c.y < HEAD_Y): return False
-    mouth = abs(c.x) < 0.03 and CHIN_Z + 0.02 < c.z < CHIN_Z + 0.05 and c.y < HEAD_YMIN + 0.05
-    return not mouth
-beard_stubble = shell('beard_stubble', is_beard, 0.004, M['beard'], 0.5)
-beard_full = shell('beard_full', is_beard, 0.014, M['beard'], 0.5)
+# ------------------------------------------------------------------ modules -------------
+def run_module(name):
+    runpy.run_path(os.path.join(HERE, name), init_globals=globals())
 
-# gear shells
-is_arm = lambda c: abs(c.x) > 0.19 and c.z < SHOULDER_Z + 0.02
-jacket_body = shell('jacket_body', lambda c: (WAIST_Z - 0.04 < c.z < NECK_Z + 0.02 and not is_arm(c)) or (is_arm(c) and c.z > WRIST_Z + 0.012), 0.014, M['jacket'])
-jacket_collar = shell('jacket_collar', lambda c: NECK_Z - 0.01 < c.z < NECK_Z + 0.05, 0.022, M['jacket_accent'])
-jacket = join([jacket_body, jacket_collar], 'gear_jacket')
-cups = []
-for L in ('L', 'R'):
-    sx = 1 if L == 'L' else -1
-    cups.append(prim_sphere(f'cup_sh_{L}', J[f'shoulder.{L}'] + Vector((sx * 0.012, 0, 0.03)), 0.052, M['jacket_accent'], f'upper_arm.{L}', (1.05, 0.9, 0.7)))
-jacket_armour = join(cups, 'gear_jacket_armour')
-back_plate = shell('gear_jacket_back', lambda c: WAIST_Z + 0.05 < c.z < NECK_Z - 0.04 and c.y > J['chest'].y + 0.03 and abs(c.x) < 0.13, 0.03, M['jacket_accent'])
-gloves_short = shell('gear_gloves_short', lambda c: is_arm(c) and c.z < WRIST_Z + 0.012, 0.008, M['gloves'])
-gloves_gauntlet = shell('gear_gloves_gauntlet', lambda c: is_arm(c) and c.z < WRIST_Z + 0.11, 0.011, M['gloves'])
-elbows = []
-for L in ('L', 'R'):
-    elbows.append(prim_sphere(f'cup_el_{L}', J[f'elbow.{L}'] + Vector((0, 0.01, 0)), 0.052, M['elbow'], f'forearm.{L}', (0.9, 1.0, 1.15)))
-elbow_guards = join(elbows, 'gear_elbow')
-knee_soft = shell('gear_knee_soft', lambda c: abs(c.x) > 0.02 and KNEE_Z - 0.09 < c.z < KNEE_Z + 0.1 and abs(c.x) < 0.3, 0.012, M['knee'])
-knee_pad = shell('gear_knee_pad', lambda c: abs(c.x) > 0.02 and KNEE_Z - 0.09 < c.z < KNEE_Z + 0.1 and abs(c.x) < 0.3, 0.016, M['knee'])
-shin_pad = shell('gear_shin_pad', lambda c: abs(c.x) > 0.02 and ANKLE_Z + 0.12 < c.z <= KNEE_Z - 0.09 and abs(c.x) < 0.3 and c.y < J['knee.L'].y + 0.01, 0.016, M['knee'])
-knee_shell = join([knee_pad, shin_pad], 'gear_knee_shell')
-is_foot = lambda c: abs(c.x) > 0.02 and abs(c.x) < 0.3
-boots_sneaker = shell('gear_boots_sneaker', lambda c: is_foot(c) and c.z < ANKLE_Z + 0.05, 0.012, M['boots'])
-boots_ankle = shell('gear_boots_ankle', lambda c: is_foot(c) and c.z < ANKLE_Z + 0.13, 0.012, M['boots'])
-boots_tall = shell('gear_boots_tall', lambda c: is_foot(c) and c.z < ANKLE_Z + 0.33, 0.014, M['boots'])
-is_head = lambda c: c.z > CHIN_Z - 0.005 and not (c.y > HEAD_Y + 0.02 and c.z < NECK_Z + 0.03)
-helmet_open_shell = shell('gear_helmet_open_shell', lambda c: is_head(c) and c.z > CHIN_Z + 0.03 and not (is_face_front(c) and c.z < EYE_Z + 0.055) and not is_ear(c), 0.046, M['helmet'])
-def prim_box(name, center, size, mat, group, rot=(0, 0, 0)):
-    bpy.ops.mesh.primitive_cube_add(size=1, location=center)
-    o = bpy.context.active_object
-    o.name = name; o.scale = size; o.rotation_euler = rot
-    sel([o], o); bpy.ops.object.transform_apply(scale=True, rotation=True)
-    o.data.materials.append(mat)
-    rig_to(o, group)
-    return o
-peak = prim_box('gear_helmet_peak', Vector((0, HEAD_YMIN - 0.03, EYE_Z + 0.075)), (0.22, 0.1, 0.012), M['jacket_accent'], 'head', (math.radians(-22), 0, 0))
-helmet_open = join([helmet_open_shell, peak], 'gear_helmet_open')
-helmet_full = shell('gear_helmet_full', lambda c: is_head(c) and not (is_face_front(c) and EYE_Z - 0.032 < c.z < EYE_Z + 0.04) and not is_ear(c), 0.046, M['helmet'])
-helmet_visor = shell('gear_helmet_visor', lambda c: is_face_front(c) and EYE_Z - 0.04 < c.z < EYE_Z + 0.05 and c.z > CHIN_Z, 0.05, M['visor'])
+# Face first (morphs, skin bake, eyes, brows, beards, accents), then the wardrobe, then hair,
+# which reuses the wardrobe's strip() / wrap() / weighted() helpers.
+face_globals = runpy.run_path(os.path.join(HERE, 'rider_face.py'), init_globals=globals())
+MORPHS = face_globals['MORPHS']
+for k in ('is_brow', 'is_beard', 'gauss'):
+    globals()[k] = face_globals[k]
+ward_globals = runpy.run_path(os.path.join(HERE, 'rider_wardrobe.py'), init_globals=globals())
+for k in ('strip', 'wrap', 'weighted', 'mesh_part', 'recalc', 'table', 'smoothstep', 'frame',
+          'sector_radii', 'box', 'subdivide', 'rim_z', 'helmet_point', 'TAU'):
+    globals()[k] = ward_globals[k]
+hair_globals = runpy.run_path(os.path.join(HERE, 'rider_hair.py'), init_globals=globals())
+hair_parts = hair_globals['hair_parts']
+
+def assert_eyes_in_socket():
+    """Guard for the thumbnail / export pipeline: every eye part must sit at its measured centre.
+    (Positions are checked on the authored mesh; skinning keeps them attached to the head.)"""
+    for side in ('L', 'R'):
+        for prefix in ('Eye', 'Iris', 'Cornea'):
+            o = bpy.data.objects.get(f'{prefix}.{side}')
+            if not o: continue
+            c = sum((o.matrix_world @ v.co for v in o.data.vertices), Vector()) / len(o.data.vertices)
+            off = (c - EYE_C[side]).length
+            limit = 0.004 if prefix == 'Eye' else 0.014  # iris and cornea sit on the front of the eye
+            assert off < limit, f'{o.name} sits {off * 1000:.1f} mm from the socket'
+            assert o.parent == rig and o.matrix_parent_inverse.is_identity, f'{o.name} parenting'
+    print('[rider] eyes in sockets ok')
+
+def dump_parts():
+    for o in sorted(bpy.data.objects, key=lambda o: o.name):
+        if o.type != 'MESH' or o.name.startswith('gear_'): continue
+        c = sum((o.matrix_world @ v.co for v in o.data.vertices), Vector()) / max(len(o.data.vertices), 1)
+        print(f'[rider] part {o.name}: verts {len(o.data.vertices)} at ({c.x:.3f}, {c.y:.3f}, {c.z:.3f}) '
+              f'mats {[m.name for m in o.data.materials]} parent {o.parent and o.parent.name} mods {[m.type for m in o.modifiers]}')
 
 # ------------------------------------------------------------------ poses ----------------
 sel([rig], rig)
@@ -424,51 +430,22 @@ bpy.ops.object.mode_set(mode='OBJECT')
 for o in bpy.data.objects:
     o.hide_set(False); o.hide_render = False; o.hide_viewport = False
 print('[rider] objects:', sorted(o.name for o in bpy.data.objects))
+dump_parts()
+assert_eyes_in_socket()
 sel(list(bpy.data.objects), rig)
 bpy.ops.export_scene.gltf(
     filepath=OUT, export_format='GLB', use_selection=True,
     export_apply=True, export_skins=True, export_morph=True, export_morph_normal=False,
     export_animations=True, export_animation_mode='NLA_TRACKS', export_force_sampling=True,
     export_draco_mesh_compression_enable=True, export_draco_mesh_compression_level=6,
-    export_yup=True, export_texcoords=False, export_normals=True, export_materials='EXPORT',
+    export_yup=True, export_texcoords=True, export_normals=True, export_materials='EXPORT',
+    export_image_format='JPEG', export_jpeg_quality=90, export_vertex_color='NONE',
     export_def_bones=False, export_rest_position_armature=True,
 )
-print('[rider] exported', OUT, os.path.getsize(OUT))
+size = os.path.getsize(OUT)
+print('[rider] exported', OUT, size)
+assert size < 4.6e6, f'GLB over budget: {size} bytes'
 
 # ------------------------------------------------------------------ thumbnails -----------
-scene.render.engine = 'BLENDER_WORKBENCH'
-scene.display.shading.light = 'STUDIO'
-scene.display.shading.color_type = 'MATERIAL'
-scene.display.shading.show_cavity = True
-scene.display.render_aa = '8'
-scene.render.resolution_x = scene.render.resolution_y = 256
-scene.render.film_transparent = True
-scene.view_settings.view_transform = 'Standard'
-cam_data = bpy.data.cameras.new('cam'); cam = bpy.data.objects.new('cam', cam_data); scene.collection.objects.link(cam)
-scene.camera = cam
-for t in rig.animation_data.nla_tracks: t.mute = True
-scene.frame_set(1)
-cam_data.lens = 70
-head_c = Vector((0, HEAD_Y, EYE_Z - 0.04))
-cam.location = head_c + Vector((0.2, -0.8, 0.06))
-cam.rotation_mode = 'QUATERNION'
-cam.rotation_quaternion = (head_c - cam.location).to_track_quat('-Z', 'Y')
-all_hair = [o for o in hair.values() if o]
-gear_objs = [o for o in bpy.data.objects if o.name.startswith('gear_')]
-for o in gear_objs + [beard_stubble, beard_full]:
-    if o: o.hide_render = True
-def render(path):
-    scene.render.filepath = path
-    bpy.ops.render.render(write_still=True)
-default_hair = hair['crop'] if GENDER == 'male' else hair['long']
-for o in all_hair: o.hide_render = o is not default_hair
-for f in presets['faces'][GENDER]:
-    for k in body.data.shape_keys.key_blocks:
-        k.value = f['morphs'].get(k.name, 0.0)
-    render(os.path.join(THUMBS, f'face_{GENDER}_{f["id"]}.png'))
-for k in body.data.shape_keys.key_blocks: k.value = 0.0
-for hid in presets['hair'][GENDER]:
-    for o in all_hair: o.hide_render = True
-    if hid != 'bald' and hair.get(hid): hair[hid].hide_render = False
-    render(os.path.join(THUMBS, f'hair_{GENDER}_{hid}.png'))
+run_module('rider_thumbs.py')
 print('[rider] done')

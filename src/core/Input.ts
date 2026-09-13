@@ -6,9 +6,10 @@ export interface InputState {
   /** -1 (left) .. 1 (right) */
   steer: number;
   handbrake: boolean;
+  horn: boolean;
 }
 
-type ActionKey = 'up' | 'down' | 'left' | 'right' | 'space';
+type ActionKey = 'up' | 'down' | 'left' | 'right' | 'space' | 'horn';
 
 const KEYMAP: Record<string, ActionKey> = {
   KeyW: 'up',
@@ -20,18 +21,28 @@ const KEYMAP: Record<string, ActionKey> = {
   KeyD: 'right',
   ArrowRight: 'right',
   Space: 'space',
+  KeyH: 'horn',
+};
+
+const trigger = (gp: Gamepad, i: number): number => {
+  const b = gp.buttons[i];
+  if (!b) return 0;
+  return b.value > 0 ? b.value : b.pressed ? 1 : 0;
 };
 
 /**
- * Keyboard + touch input. Touch buttons call `setVirtual` so the on-screen controls and
+ * Keyboard + touch + gamepad. Touch buttons call `setVirtual` so on-screen controls and
  * the keyboard share one code path.
  */
 export class Input {
   private keys = new Set<ActionKey>();
   private virtual = new Set<ActionKey>();
   private listeners = new Map<string, Set<() => void>>();
+  private wasCamera = false;
+  /** Rising edge of gamepad Y / triangle this frame. */
+  cameraPulse = false;
 
-  readonly state: InputState = { throttle: 0, brake: 0, steer: 0, handbrake: false };
+  readonly state: InputState = { throttle: 0, brake: 0, steer: 0, handbrake: false, horn: false };
 
   constructor(private target: Window = window) {
     this.target.addEventListener('keydown', this.onKeyDown);
@@ -54,17 +65,36 @@ export class Input {
   update(dt: number): void {
     const has = (a: ActionKey) => this.keys.has(a) || this.virtual.has(a);
     const s = this.state;
-    const steerTarget = (has('right') ? 1 : 0) - (has('left') ? 1 : 0);
-    // Steering ramps in over ~0.18s and centres faster, which feels much better than a
-    // hard -1/0/1 toggle on a bike.
+    let steerTarget = (has('right') ? 1 : 0) - (has('left') ? 1 : 0);
+    let throttleTarget = has('up') ? 1 : 0;
+    let brake = has('down') ? 1 : 0;
+    let handbrake = has('space');
+    let horn = has('horn');
+    this.cameraPulse = false;
+
+    const gp = typeof navigator !== 'undefined' ? navigator.getGamepads?.()?.[0] : null;
+    if (gp) {
+      const lx = gp.axes[0] ?? 0;
+      if (Math.abs(lx) > 0.08) steerTarget = Math.max(-1, Math.min(1, lx));
+      const rt = trigger(gp, 7);
+      const lt = trigger(gp, 6);
+      if (rt > 0.08) throttleTarget = rt;
+      if (lt > 0.08) brake = lt;
+      if (gp.buttons[0]?.pressed) handbrake = true;
+      if (gp.buttons[1]?.pressed) horn = true;
+      const cam = !!gp.buttons[3]?.pressed;
+      this.cameraPulse = cam && !this.wasCamera;
+      this.wasCamera = cam;
+    } else this.wasCamera = false;
+
     const rate = steerTarget === 0 ? 12 : 6;
     s.steer += (steerTarget - s.steer) * Math.min(1, rate * dt);
     if (Math.abs(s.steer) < 0.001) s.steer = 0;
 
-    const throttleTarget = has('up') ? 1 : 0;
     s.throttle += (throttleTarget - s.throttle) * Math.min(1, 8 * dt);
-    s.brake = has('down') ? 1 : 0;
-    s.handbrake = has('space');
+    s.brake = brake;
+    s.handbrake = handbrake;
+    s.horn = horn;
   }
 
   private isActive(a: ActionKey) {

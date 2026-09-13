@@ -22,6 +22,7 @@ export class PhotoMode {
   distance = 5.2;
   fov = 42;
   height = 0.75;
+  portrait = false;
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
@@ -56,12 +57,20 @@ export class PhotoMode {
         </div>
         <label class="photo-slider">Lens <input type="range" min="24" max="80" value="42" /></label>
         <label class="photo-slider">Height <input type="range" min="0" max="100" value="35" data-h /></label>
+        <button type="button" class="btn-ghost photo-story">9:16</button>
         <button type="button" class="btn-primary photo-capture">Capture</button>
         <button type="button" class="btn-ghost photo-close">Close</button>
       </div>`;
     parent.appendChild(this.root);
     this.root.querySelector('.photo-capture')!.addEventListener('click', () => this.cb.onCapture());
     this.root.querySelector('.photo-close')!.addEventListener('click', () => this.cb.onClose());
+    this.root.querySelector('.photo-story')!.addEventListener('click', () => {
+      this.portrait = !this.portrait;
+      (this.root.querySelector('.photo-story') as HTMLElement).classList.toggle(
+        'active',
+        this.portrait,
+      );
+    });
     this.root.querySelectorAll<HTMLButtonElement>('[data-time]').forEach((b) =>
       b.addEventListener('click', () => {
         this.root.querySelectorAll('[data-time]').forEach((x) => x.classList.remove('active'));
@@ -176,12 +185,32 @@ export async function composePhoto(
   gl: HTMLCanvasElement,
   caption: string,
   sub: string,
+  portrait = false,
 ): Promise<Blob> {
   const c = document.createElement('canvas');
-  c.width = gl.width;
-  c.height = gl.height;
+  if (portrait) {
+    const side = Math.min(gl.width, gl.height);
+    const sx = (gl.width - side) / 2;
+    c.width = Math.round(side * 0.5625);
+    c.height = side;
+    const ctx0 = c.getContext('2d')!;
+    ctx0.drawImage(
+      gl,
+      sx + (side - c.width) / 2,
+      (gl.height - side) / 2,
+      c.width,
+      side,
+      0,
+      0,
+      c.width,
+      c.height,
+    );
+  } else {
+    c.width = gl.width;
+    c.height = gl.height;
+  }
   const ctx = c.getContext('2d')!;
-  ctx.drawImage(gl, 0, 0);
+  if (!portrait) ctx.drawImage(gl, 0, 0);
   const s = Math.max(1, c.width / 1280);
   const pad = 28 * s;
   const grad = ctx.createLinearGradient(0, c.height - 160 * s, 0, c.height);

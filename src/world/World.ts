@@ -38,6 +38,7 @@ export class World {
   private quality: Quality;
   private time: TimeOfDay = 'auto';
   private _exposure = 1;
+  private realized = false;
 
   constructor(
     readonly scene: Scene,
@@ -57,11 +58,22 @@ export class World {
     return this.def.id;
   }
 
-  load(id: SceneId, time: TimeOfDay): void {
+  get isRealized(): boolean {
+    return this.realized;
+  }
+
+  load(id: SceneId, time: TimeOfDay, lite = false): void {
     this.dispose(false);
     this.def = SCENE_BY_ID[id];
     this.path = new RoadPath(this.def);
     this.heights = new HeightField(this.def, this.path);
+    this.realized = false;
+    if (!lite) this.realize();
+    this.setTimeOfDay(time);
+  }
+
+  realize(): void {
+    if (this.realized) return;
     this.terrain = new Terrain(this.heights, this.def);
     this.road = new Road(this.heights, this.def);
     this.veg = new Vegetation(this.heights, this.def, this.quality);
@@ -74,7 +86,8 @@ export class World {
       this.city = new City(this.heights, this.def);
       this.scene.add(this.city.group);
     }
-    this.setTimeOfDay(time);
+    this.realized = true;
+    this.setTimeOfDay(this.time);
     this.road.setWet(this.weather.params.wetRoad);
   }
 
@@ -83,6 +96,7 @@ export class World {
     this.gates?.dispose();
     this.gates = null;
     if (!checkpoints) return;
+    if (!this.realized) this.realize();
     this.gates = new Gates(this.heights, checkpoints);
     this.scene.add(this.gates.group);
   }
@@ -92,6 +106,7 @@ export class World {
     this.traffic?.dispose();
     this.traffic = null;
     if (seed === null) return;
+    if (!this.realized) this.realize();
     this.traffic = new Traffic(this.heights, this.def, seed, this.quality, density);
     this.traffic.setLamps(this.headlightsOn);
     this.scene.add(this.traffic.group);
@@ -190,7 +205,7 @@ export class World {
     bikeForward: Vector3 = _fwd,
   ): void {
     this.atmosphere.update(bikePos, cameraPos);
-    this.traffic?.update(dt, bikePos.z, bikeSpeed);
+    this.traffic?.update(dt, bikePos.z, bikeSpeed, this.path.lateral(bikePos.x, bikePos.z));
     this.weather.update(dt, cameraPos, bikeForward, bikeSpeed);
     this.terrain?.update(bikePos);
     this.road?.update(bikePos.z);
@@ -218,6 +233,7 @@ export class World {
     this.terrain = this.road = this.veg = this.ocean = this.city = null;
     this.traffic = null;
     this.gates = null;
+    this.realized = false;
     if (all) {
       this.atmosphere.dispose();
       this.weather.dispose();

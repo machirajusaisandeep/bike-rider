@@ -168,7 +168,11 @@ export class Road {
     }
     this.signMats = r.signs.map(
       (l) =>
-        new MeshStandardMaterial({ map: signTexture(l, r.signStyle), roughness: 0.6, metalness: 0.1 }),
+        new MeshStandardMaterial({
+          map: signTexture(l, r.signStyle),
+          roughness: 0.6,
+          metalness: 0.1,
+        }),
     );
     this.uphill = def.terrain.hillside >= 0 ? 1 : -1;
 
@@ -438,7 +442,10 @@ export class Road {
           continue;
         }
         _p.set(x, path.elevation(z) - 0.05, z);
-        _q.setFromAxisAngle(_up, path.heading(z) + Math.PI / 2 + (blocks ? (rnd() - 0.5) * 0.3 : 0));
+        _q.setFromAxisAngle(
+          _up,
+          path.heading(z) + Math.PI / 2 + (blocks ? (rnd() - 0.5) * 0.3 : 0),
+        );
         _s.set(1, 1, 1);
         this.parapet.setMatrixAt(id, _m.compose(_p, _q, _s));
       }

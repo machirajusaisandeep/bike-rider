@@ -1,6 +1,7 @@
 import {
   BufferGeometry,
   Group,
+  InstancedBufferAttribute,
   InstancedMesh,
   Material,
   Matrix4,
@@ -14,6 +15,7 @@ import type { HeightField } from './heights';
 import { seededRandom } from './roadPath';
 import type { SceneDef } from './scenes';
 import { METRO_PIER_Z, TRAFFIC_BY_SCENE, type TrafficDef } from './trafficDefs';
+import { hornMagnitude, hornTargets, type HornReaction } from './horn';
 import {
   buildHazard,
   buildVehicle,
@@ -67,15 +69,22 @@ interface Vehicle extends Obstacle {
   /** Two-wheelers: temporary lateral target while squeezing past a slower vehicle. */
   filterLat: number | null;
   cruise: number;
+  baseCruise: number;
   wanderPhase: number;
   instance: number;
   alive: boolean;
+  reactUntil: number;
+  react: HornReaction | null;
+  blinkUntil: number;
 }
 
 interface Hazard extends Obstacle {
   type: 'hazard';
   spec: HazardSpec;
   tile: number;
+  yaw: number;
+  scareLat: number | null;
+  scareUntil: number;
 }
 
 interface Pool {
@@ -83,6 +92,8 @@ interface Pool {
   geometry: BufferGeometry;
   material: Material;
   free: number[];
+  brake?: InstancedBufferAttribute;
+  flash?: InstancedBufferAttribute;
 }
 
 export interface Contact {
@@ -125,6 +136,8 @@ export class Traffic {
   private density = 1;
   private qualityScale = 1;
   private lastBikeZ = 0;
+  private lastBikeLat = 0;
+  private simT = 0;
   /** Half width of the median obstruction vehicles must keep clear of (0 = none). */
   private medianClear = 0;
   enabled = true;
@@ -179,12 +192,16 @@ export class Traffic {
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     mesh.count = cap;
+    const brake = new InstancedBufferAttribute(new Float32Array(cap), 1);
+    const flash = new InstancedBufferAttribute(new Float32Array(cap), 1);
+    geometry.setAttribute('brakeK', brake);
+    geometry.setAttribute('flashK', flash);
     for (let i = 0; i < cap; i++) mesh.setMatrixAt(i, _hidden);
     mesh.instanceMatrix.needsUpdate = true;
     this.group.add(mesh);
     const free: number[] = [];
     for (let i = cap - 1; i >= 0; i--) free.push(i);
-    return { mesh, geometry, material, free };
+    return { mesh, geometry, material, free, brake, flash };
   }
 
   setDensity(d: number): void {
@@ -206,6 +223,7 @@ export class Traffic {
     this.hazardTiles.clear();
     this.lastTile = NaN;
     this.lastBikeZ = bikeZ;
+    this.simT = 0;
     this.update(0, bikeZ, 0);
   }
 
@@ -215,10 +233,13 @@ export class Traffic {
     pool.free.push(instance);
   }
 
-  update(dt: number, bikeZ: number, bikeSpeed: number): void {
+  update(dt: number, bikeZ: number, bikeSpeed: number, bikeLat = 0): void {
     this.lastBikeZ = bikeZ;
+    this.lastBikeLat = bikeLat;
+    if (dt > 0) this.simT += dt;
     if (!this.enabled) return;
     this.updateHazards(bikeZ);
+    this.updateHazardMotion(dt);
     // --- despawn --------------------------------------------------------------------------
     for (let i = this.vehicles.length - 1; i >= 0; i--) {
       const v = this.vehicles[i]!;
@@ -252,6 +273,11 @@ export class Traffic {
             blockGap = gap;
           }
         }
+        if (v.react === 'brake' && this.simT < v.reactUntil) speed = Math.min(speed, v.cruise);
+        else if (v.react === 'brake') {
+          v.react = null;
+          v.cruise = v.baseCruise;
+        }
         if (blocker) {
           if (v.spec.twoWheeler && this.def.filter) {
             // Two-wheelers do not queue: squeeze towards the centre line and past.
@@ -259,11 +285,15 @@ export class Traffic {
             v.filterLat = blocker.lat + centreward * (blocker.halfW + v.halfW + 0.45);
           } else {
             speed = Math.min(speed, blocker.cruise * 0.98);
-            v.filterLat = null;
+            if (v.react !== 'flinch') v.filterLat = null;
             if (canChange && this.behaviourRnd() < dt * this.def.laneChange * 4)
               this.tryLaneChange(v);
           }
-        } else v.filterLat = null;
+        } else if (v.react !== 'flinch') v.filterLat = null;
+        if (v.react === 'flinch' && this.simT >= v.reactUntil) {
+          v.react = null;
+          v.filterLat = null;
+        }
         // Idle lane hopping (Bengaluru).
         if (canChange) {
           v.laneTimer -= dt;
@@ -288,9 +318,53 @@ export class Traffic {
         }
         const rate = (v.spec.twoWheeler ? 3.5 : 1.6) * dt;
         v.lat += Math.max(-rate, Math.min(rate, target - v.lat));
-        this.place(v, path.heading(v.z) + (v.dir === -1 ? Math.PI : 0));
+        this.place(v, path.heading(v.z) + (v.dir === -1 ? Math.PI : 0), speed, v.baseCruise);
       }
     }
+  }
+
+  /**
+   * Horn: livestock walk off, two-wheelers flinch, cars brake, heavies blink. Does not consume
+   * spawn or behaviour RNGs.
+   */
+  honk(bikeLat: number, bikeZ: number): void {
+    const list = [
+      ...this.vehicles.map((v) => ({ id: v.id, kind: v.kind, z: v.z })),
+      ...this.hazards.map((h) => ({ id: h.id, kind: h.kind, z: h.z })),
+    ];
+    for (const t of hornTargets(list, bikeZ)) {
+      const mag = hornMagnitude(t.id);
+      if (t.reaction === 'scare') {
+        const h = this.hazards.find((x) => x.id === t.id);
+        if (!h) continue;
+        const half = this.scene.road.width / 2 + 1.4;
+        h.scareLat = (h.lat >= 0 ? 1 : -1) * half;
+        h.scareUntil = this.simT + 1.2;
+      } else {
+        const v = this.vehicles.find((x) => x.id === t.id);
+        if (!v) continue;
+        v.react = t.reaction;
+        v.reactUntil =
+          this.simT + (t.reaction === 'flinch' ? 0.45 : t.reaction === 'brake' ? 0.6 : 0.12);
+        if (t.reaction === 'flinch') {
+          const away = bikeLat < v.lat ? 1 : -1;
+          v.filterLat = v.lat + away * (0.4 + 0.4 * mag);
+        }
+        if (t.reaction === 'brake') v.cruise = v.baseCruise * 0.7;
+        if (t.reaction === 'blink') v.blinkUntil = this.simT + 0.12;
+      }
+    }
+  }
+
+  /** Same-direction vehicle 4–10 m ahead in the rider's lane. */
+  draftAhead(bikeLat: number, bikeZ: number): boolean {
+    for (const v of this.vehicles) {
+      if (v.dir !== 1) continue;
+      const gap = bikeZ - v.z;
+      if (gap < 4 || gap > 10) continue;
+      if (Math.abs(v.lat - bikeLat) < 1.1) return true;
+    }
+    return false;
   }
 
   /** Move to the other lane on my side if there is room there. */
@@ -348,15 +422,19 @@ export class Traffic {
       halfL: spec.halfL,
       speed: cruise * dir,
       cruise,
+      baseCruise: cruise,
       effect: 'solid',
       wanderPhase: this.rnd() * Math.PI * 2,
       instance: pool.free.pop()!,
       alive: true,
       passed: false,
       bumped: false,
+      reactUntil: 0,
+      react: null,
+      blinkUntil: 0,
     };
     this.vehicles.push(v);
-    this.place(v, this.hf.path.heading(z) + (dir === -1 ? Math.PI : 0));
+    this.place(v, this.hf.path.heading(z) + (dir === -1 ? Math.PI : 0), cruise, cruise);
     return true;
   }
 
@@ -371,13 +449,25 @@ export class Traffic {
     return entries[0]![0];
   }
 
-  private place(v: Vehicle, yaw: number): void {
+  private place(v: Vehicle, yaw: number, speed: number, cruise: number): void {
     const pool = this.vehiclePools.get(v.kind as VehicleKind)!;
     const x = this.hf.path.centerX(v.z) + v.lat;
     _p.set(x, this.hf.height(x, v.z) + 0.03, v.z);
     _q.setFromAxisAngle(_up, yaw);
     pool.mesh.setMatrixAt(v.instance, _m.compose(_p, _q, _s));
     pool.mesh.instanceMatrix.needsUpdate = true;
+    const braking = speed < cruise * 0.92 || this.simT < v.blinkUntil || v.react === 'brake';
+    pool.brake?.setX(v.instance, braking ? 1 : 0);
+    let flash = 0;
+    if (v.dir === -1) {
+      const ahead = this.lastBikeZ - v.z;
+      if (ahead > 0 && ahead < 40 && this.lastBikeLat > 0.4) {
+        flash = Math.sin(this.simT * 9) > 0.35 ? 1 : 0;
+      }
+    }
+    pool.flash?.setX(v.instance, flash);
+    if (pool.brake) pool.brake.needsUpdate = true;
+    if (pool.flash) pool.flash.needsUpdate = true;
   }
 
   // ------------------------------------------------------------------------------ hazards ---
@@ -433,6 +523,12 @@ export class Traffic {
             lat = Math.sign(lat || 1) * (this.medianClear + spec.halfW + 0.3);
         }
         const id = pool.free.pop()!;
+        const yaw =
+          spec.placement === 'road' || median
+            ? path.heading(z)
+            : kind === 'cow' || kind === 'goat'
+              ? path.heading(z) + (rnd() - 0.5) * 1.6
+              : rnd() * Math.PI * 2;
         const h: Hazard = {
           id,
           type: 'hazard',
@@ -448,20 +544,36 @@ export class Traffic {
           effect: spec.effect,
           passed: false,
           bumped: false,
+          yaw,
+          scareLat: null,
+          scareUntil: 0,
         };
         this.hazards.push(h);
-        const x = path.centerX(z) + lat;
-        const yaw =
-          spec.placement === 'road' || median
-            ? path.heading(z)
-            : kind === 'cow' || kind === 'goat'
-              ? path.heading(z) + (rnd() - 0.5) * 1.6
-              : rnd() * Math.PI * 2;
-        _p.set(x, this.hf.height(x, z), z);
-        _q.setFromAxisAngle(_up, yaw);
-        pool.mesh.setMatrixAt(id, _m.compose(_p, _q, _s));
-        pool.mesh.instanceMatrix.needsUpdate = true;
+        this.placeHazard(h);
       }
+    }
+  }
+
+  private placeHazard(h: Hazard): void {
+    const pool = this.hazardPools.get(h.kind as HazardKind)!;
+    const x = this.hf.path.centerX(h.z) + h.lat;
+    _p.set(x, this.hf.height(x, h.z), h.z);
+    _q.setFromAxisAngle(_up, h.yaw);
+    pool.mesh.setMatrixAt(h.id, _m.compose(_p, _q, _s));
+    pool.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  private updateHazardMotion(dt: number): void {
+    if (dt <= 0) return;
+    for (const h of this.hazards) {
+      if (h.scareLat === null) continue;
+      const step = 2.4 * dt;
+      const d = h.scareLat - h.lat;
+      if (Math.abs(d) < step) h.lat = h.scareLat;
+      else h.lat += Math.sign(d) * step;
+      h.yaw += dt * 0.8 * Math.sign(h.scareLat);
+      this.placeHazard(h);
+      if (this.simT >= h.scareUntil) h.scareLat = h.lat;
     }
   }
 

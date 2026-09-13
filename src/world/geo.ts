@@ -70,17 +70,30 @@ export const LAMPS = { value: 0 };
  */
 export function vehicleMat(): MeshStandardMaterial {
   const mat = stdMat({ roughness: 0.55, metalness: 0.2 });
-  mat.customProgramCacheKey = () => 'vehicle-lamps';
+  mat.customProgramCacheKey = () => 'vehicle-lamps-2';
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uLamps = LAMPS;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float lampK;\nvarying float vLampK;')
-      .replace('#include <color_vertex>', '#include <color_vertex>\nvLampK = lampK;');
+      .replace(
+        '#include <common>',
+        '#include <common>\nattribute float lampK;\nattribute float brakeK;\nattribute float flashK;\nvarying float vLampK;\nvarying float vBrake;\nvarying float vFlash;',
+      )
+      .replace(
+        '#include <color_vertex>',
+        '#include <color_vertex>\nvLampK = lampK;\nvBrake = brakeK;\nvFlash = flashK;',
+      );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vLampK;\nuniform float uLamps;')
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying float vLampK;\nvarying float vBrake;\nvarying float vFlash;\nuniform float uLamps;',
+      )
       .replace(
         '#include <emissivemap_fragment>',
-        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vLampK * uLamps * 1.3;',
+        `#include <emissivemap_fragment>
+        float night = vLampK * uLamps * 1.3;
+        float tail = step(1.5, vLampK) * vBrake * 2.2;
+        float head = (1.0 - step(1.5, vLampK)) * step(0.5, vLampK) * vFlash * 2.6;
+        totalEmissiveRadiance += vColor.rgb * (night + tail + head);`,
       );
   };
   return mat;

@@ -3,6 +3,27 @@ import { detectWebGL } from './core/webgl';
 
 const app = document.getElementById('app')!;
 
+function bootScene(): string {
+  try {
+    const raw = localStorage.getItem('bike-rider.settings.v2');
+    const parsed = raw ? (JSON.parse(raw) as { scene?: string }) : null;
+    const scene = parsed?.scene;
+    return ['munnar', 'ladakh', 'wayanad', 'ooty', 'varkala', 'bengaluru'].includes(scene ?? '')
+      ? scene!
+      : 'munnar';
+  } catch {
+    return 'munnar';
+  }
+}
+
+function showBootPoster(): void {
+  const scene = bootScene();
+  app.innerHTML = `
+    <div class="boot-poster" style="--boot-image:url('${scene === 'munnar' ? 'previews/munnar.jpg' : `previews/${scene}.jpg`}')">
+      <div class="boot-brand"><span class="brand-dot"></span>BIKE RIDER</div>
+    </div>`;
+}
+
 function showFallback(reason?: string): void {
   app.innerHTML = `
     <div class="fallback">
@@ -21,6 +42,7 @@ function showFallback(reason?: string): void {
     </div>`;
 }
 
+showBootPoster();
 const support = detectWebGL();
 if (!support.supported) {
   showFallback(support.reason);

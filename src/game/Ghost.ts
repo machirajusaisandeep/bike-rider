@@ -72,6 +72,32 @@ export interface GhostSample {
   speed: number;
 }
 
+/**
+ * Time (s) when the ghost was at world z. Samples run toward −Z; returns null if z is outside
+ * the recorded span.
+ */
+export function ghostTimeAtZ(d: Float32Array, z: number): number | null {
+  const count = d.length / STRIDE;
+  if (count < 2) return null;
+  const zOf = (i: number) => d[i * STRIDE + 3]!;
+  const tOf = (i: number) => d[i * STRIDE]!;
+  // Recorded z decreases (road toward −Z).
+  if (z > zOf(0) + 2 || z < zOf(count - 1)! - 2) return null;
+  let lo = 0;
+  let hi = count - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (zOf(mid) >= z) lo = mid + 1;
+    else hi = mid;
+  }
+  const i = Math.max(1, lo);
+  const z0 = zOf(i - 1);
+  const z1 = zOf(i);
+  const span = z1 - z0;
+  const k = Math.abs(span) > 1e-4 ? (z - z0) / span : 0;
+  return tOf(i - 1) + (tOf(i) - tOf(i - 1)) * k;
+}
+
 /** Interpolated sample at time `t`; returns false when `t` is past the end of the data. */
 export function sampleGhost(d: Float32Array, t: number, out: GhostSample): boolean {
   const count = d.length / STRIDE;
@@ -111,6 +137,11 @@ export class GhostRider {
   private data: Float32Array | null = null;
   private cursor = 0;
   label = '';
+  /** When set, `update` is ignored and the ghost is posed from player z (rubber-band). */
+  followZ = false;
+  get buffer(): Float32Array | null {
+    return this.data;
+  }
 
   constructor(tint: Color = GHOST_TINT) {
     const root: Object3D = this.bike.root;
@@ -151,6 +182,19 @@ export class GhostRider {
 
   get active(): boolean {
     return !!this.data;
+  }
+
+  /** Pose from the sample whose z is closest to `playerZ`, clamped to ±2.5 s of wall time. */
+  updateFollowZ(playerZ: number, wallT: number): void {
+    const d = this.data;
+    if (!d) return;
+    const tGhost = ghostTimeAtZ(d, playerZ);
+    if (tGhost === null) {
+      this.bike.root.visible = false;
+      return;
+    }
+    const t = Math.max(wallT - 2.5, Math.min(wallT + 2.5, tGhost));
+    this.update(t);
   }
 
   /** Move the ghost to time `t` (seconds since the run's GO). */

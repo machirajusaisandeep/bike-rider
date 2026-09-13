@@ -260,8 +260,12 @@ export class City {
       const x = path.centerX(z) + side * (setback + depth / 2);
       const glass = rnd() < (row === 0 ? 0.5 : 0.25);
       const floors = glass
-        ? Math.max(6, city.minFloors + Math.floor(Math.pow(rnd(), 1.2) * (city.maxFloors - city.minFloors)))
-        : city.minFloors + Math.floor(Math.pow(rnd(), 1.9) * (city.maxFloors - city.minFloors) * 0.7);
+        ? Math.max(
+            6,
+            city.minFloors + Math.floor(Math.pow(rnd(), 1.2) * (city.maxFloors - city.minFloors)),
+          )
+        : city.minFloors +
+          Math.floor(Math.pow(rnd(), 1.9) * (city.maxFloors - city.minFloors) * 0.7);
       const h = floors * 3.2;
       const y = this.hf.height(x, z) - 0.3;
       _p.set(x, y, z);
@@ -282,11 +286,7 @@ export class City {
           continue;
         }
         const rs = 1.4 + rnd() * 1.6;
-        _p.set(
-          x + (rnd() - 0.5) * (width - 4),
-          y + h + 0.3,
-          z + (rnd() - 0.5) * (depth - 4),
-        );
+        _p.set(x + (rnd() - 0.5) * (width - 4), y + h + 0.3, z + (rnd() - 0.5) * (depth - 4));
         _s.set(rs, rs * (0.8 + rnd() * 0.6), rs);
         this.roof.setMatrixAt(rid, _m.compose(_p, _q, _s));
       }
@@ -371,7 +371,10 @@ export class City {
         const z = z0 - rnd() * TILE;
         const x = path.centerX(z) + side * (edge + 2.4 + 6.4 - 1.3);
         _p.set(x, this.hf.height(x, z) + 0.03, z);
-        _q.setFromAxisAngle(_up, path.heading(z) + (side === 1 ? Math.PI : 0) + (rnd() - 0.5) * 0.12);
+        _q.setFromAxisAngle(
+          _up,
+          path.heading(z) + (side === 1 ? Math.PI : 0) + (rnd() - 0.5) * 0.12,
+        );
         _s.set(1, 1, 1);
         im.setMatrixAt(id, _m.compose(_p, _q, _s));
       }
@@ -391,7 +394,8 @@ function mergeBoxes(spec: [number, number, number, number, number, number][]): B
     g.translate(x, y, z);
     // scale UVs so the concrete texture tiles by metres rather than stretching
     const uv = g.attributes.uv as BufferAttribute;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (Math.max(w, d) / 2.5), uv.getY(i) * (h / 2.5));
+    for (let i = 0; i < uv.count; i++)
+      uv.setXY(i, uv.getX(i) * (Math.max(w, d) / 2.5), uv.getY(i) * (h / 2.5));
     return g.toNonIndexed();
   });
   const out = merge(parts);

@@ -1,4 +1,6 @@
+import type { TimeOfDay } from '../core/settings';
 import type { SceneId } from '../world/scenes';
+import type { WeatherId } from '../world/Weather';
 
 /**
  * Named Indian routes: an ordered list of checkpoints along a scene's road. Distances are
@@ -13,6 +15,9 @@ export interface Checkpoint {
   kind: CheckpointKind;
   /** Short line shown on the banner / toast. */
   note?: string;
+  weather?: WeatherId;
+  time?: TimeOfDay;
+  prop?: 'shack' | 'chorten' | 'rail' | 'arch';
 }
 
 export interface Route {
@@ -39,12 +44,33 @@ export const ROUTES: Route[] = [
     blurb: 'The pilgrimage. Three passes, two chai stops, one very thin atmosphere.',
     reward: 900,
     checkpoints: [
-      { at: 900, name: 'Rohtang La', kind: 'pass', note: '3,978 m' },
-      { at: 1700, name: 'Keylong dhaba', kind: 'dhaba', note: 'Chai and maggi' },
-      { at: 2600, name: 'Baralacha La', kind: 'pass', note: '4,890 m' },
-      { at: 3400, name: 'Sarchu tents', kind: 'dhaba', note: 'Butter tea' },
-      { at: 4200, name: 'Tanglang La', kind: 'pass', note: '5,328 m' },
-      { at: 5000, name: 'Khardung La', kind: 'finish', note: 'Top of the world' },
+      {
+        at: 900,
+        name: 'Rohtang La',
+        kind: 'pass',
+        note: '3,978 m',
+        weather: 'fog',
+        prop: 'chorten',
+      },
+      { at: 1700, name: 'Keylong dhaba', kind: 'dhaba', note: 'Chai and maggi', prop: 'shack' },
+      {
+        at: 2600,
+        name: 'Baralacha La',
+        kind: 'pass',
+        note: '4,890 m',
+        weather: 'snow',
+        prop: 'chorten',
+      },
+      { at: 3400, name: 'Sarchu tents', kind: 'dhaba', note: 'Butter tea', prop: 'shack' },
+      {
+        at: 4200,
+        name: 'Tanglang La',
+        kind: 'pass',
+        note: '5,328 m',
+        time: 'golden',
+        prop: 'chorten',
+      },
+      { at: 5000, name: 'Khardung La', kind: 'finish', note: 'Top of the world', time: 'golden' },
     ],
   },
   {
@@ -56,9 +82,9 @@ export const ROUTES: Route[] = [
     blurb: 'Through the tiger reserve and up the 36 hairpins of the Kalhatti ghat.',
     reward: 700,
     checkpoints: [
-      { at: 700, name: 'Bandipur gate', kind: 'view', note: 'Elephant crossing' },
-      { at: 1500, name: 'Masinagudi dhaba', kind: 'dhaba', note: 'Filter coffee' },
-      { at: 2300, name: 'Hairpin 12 / 36', kind: 'view', note: 'Kalhatti ghat' },
+      { at: 700, name: 'Bandipur gate', kind: 'view', note: 'Elephant crossing', prop: 'arch' },
+      { at: 1500, name: 'Masinagudi dhaba', kind: 'dhaba', note: 'Filter coffee', prop: 'shack' },
+      { at: 2300, name: 'Hairpin 12 / 36', kind: 'view', note: 'Kalhatti ghat', prop: 'rail' },
       { at: 3100, name: 'Hairpin 36 / 36', kind: 'pass', note: 'Made it' },
       { at: 3800, name: 'Ooty', kind: 'finish', note: 'Queen of hills' },
     ],
@@ -73,8 +99,14 @@ export const ROUTES: Route[] = [
     reward: 650,
     checkpoints: [
       { at: 700, name: 'Neriamangalam bridge', kind: 'view', note: 'Periyar below' },
-      { at: 1500, name: 'Adimali chai kada', kind: 'dhaba', note: 'Chai and pazham pori' },
-      { at: 2200, name: 'Cheeyappara falls', kind: 'view', note: 'Seven steps' },
+      {
+        at: 1500,
+        name: 'Adimali chai kada',
+        kind: 'dhaba',
+        note: 'Chai and pazham pori',
+        prop: 'shack',
+      },
+      { at: 2200, name: 'Cheeyappara falls', kind: 'view', note: 'Seven steps', prop: 'rail' },
       { at: 3000, name: 'Munnar', kind: 'finish', note: 'Tea country' },
     ],
   },
@@ -89,7 +121,14 @@ export const ROUTES: Route[] = [
     checkpoints: [
       { at: 600, name: 'Adivaram', kind: 'view', note: 'Foot of the ghat' },
       { at: 1400, name: 'Churam view point', kind: 'view', note: 'Hairpin 5 / 9' },
-      { at: 2100, name: 'Lakkidi dhaba', kind: 'dhaba', note: 'Wettest place in Kerala' },
+      {
+        at: 2100,
+        name: 'Lakkidi dhaba',
+        kind: 'dhaba',
+        note: 'Wettest place in Kerala',
+        prop: 'shack',
+        weather: 'rain',
+      },
       { at: 2900, name: 'Vythiri', kind: 'finish', note: 'Into the mist' },
     ],
   },
@@ -103,7 +142,14 @@ export const ROUTES: Route[] = [
     reward: 500,
     checkpoints: [
       { at: 500, name: 'Papanasam beach', kind: 'view', note: 'Helipad' },
-      { at: 1200, name: 'Black beach shack', kind: 'dhaba', note: 'Lime soda' },
+      {
+        at: 1200,
+        name: 'Black beach shack',
+        kind: 'dhaba',
+        note: 'Lime soda',
+        prop: 'shack',
+        time: 'golden',
+      },
       {
         at: 1900,
         name: 'Kappil backwaters',

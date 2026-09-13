@@ -1,7 +1,6 @@
 import {
   ACESFilmicToneMapping,
   Clock,
-  DirectionalLight,
   PCFSoftShadowMap,
   PerspectiveCamera,
   Scene,
@@ -10,6 +9,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { initAnalytics, track } from '../core/analytics';
+import { Governor } from '../core/governor';
 import { ROAD, TRAFFIC } from '../core/config';
 import { Input, type InputState } from '../core/Input';
 import { loadProfile, recordRun, type Profile } from '../core/profile';
@@ -48,6 +48,7 @@ import { Color } from 'three';
 import { renderCard, shareCard } from '../share/Card';
 import { submitRun } from '../net/leaderboard';
 import { Dust } from '../world/Dust';
+import { Skids } from '../world/Skids';
 import { isSceneId, SCENE_BY_ID, type SceneId } from '../world/scenes';
 import type { Contact, NearMiss } from '../world/Traffic';
 import { World } from '../world/World';
@@ -59,6 +60,7 @@ import { FACES, GEAR_BY_ID, HAIR, protectionFor, sanitizeRider, type RiderConfig
 import {
   GhostRecorder,
   GhostRider,
+  ghostTimeAtZ,
   loadGhost,
   sampleGhost,
   saveGhost,
@@ -66,6 +68,7 @@ import {
 } from './Ghost';
 import { Health } from './Health';
 import { Rider } from './Rider';
+import { RiderStudio } from './RiderStudio';
 import { MODE_LABEL, Run, type GameMode } from './Run';
 import { Scoring } from './Scoring';
 
@@ -76,7 +79,7 @@ const CRASH_HOLD_S = 1.7;
 const CRASH_SLOWMO = 0.4;
 const GO_FLASH_S = 0.7;
 
-const NO_INPUT: InputState = { throttle: 0, brake: 0, steer: 0, handbrake: false };
+const NO_INPUT: InputState = { throttle: 0, brake: 0, steer: 0, handbrake: false, horn: false };
 
 const _back = new Vector3();
 const _rearContact = new Vector3();
@@ -89,13 +92,20 @@ export class Game {
   private world: World;
   private bike = new Bike();
   private rider = new Rider();
+  private riderStudio: RiderStudio | null = null;
   private physics = new BikePhysics();
   private input = new Input();
   private hud!: Hud;
   private menu: Menu;
   private summary: Summary;
   private dust: Dust;
+  private skids!: Skids;
   private audio = new EngineAudio();
+  private governor = new Governor();
+  private hornHeld = false;
+  private hornCool = 0;
+  private testRideUntil = 0;
+  private garageDrag: { x: number; yaw: number } | null = null;
   private post: PostFX | null = null;
   private settings: Settings;
   private profile: Profile;
@@ -112,6 +122,7 @@ export class Game {
   /** Dev aids via URL: ?autodrive, ?camera=..., ?time=..., ?scene=..., ?nomenu, ?perf, ?seed, ?mode */
   private params = new URLSearchParams(location.search);
   private autodrive = this.params.has('autodrive');
+  private bootToMenu = !(this.params.has('nomenu') || this.autodrive);
   private autoOffset = 0;
   /** Menu is up: the world rides itself in cinematic view behind it. */
   private attract = false;
@@ -146,6 +157,12 @@ export class Game {
   private others: GhostRider[] = [];
   private replaying = false;
   private continued = false;
+  private previewTimer: number | null = null;
+  private pendingPreview: SceneId | null = null;
+  private postWarmTimer: number | null = null;
+  private worldWarmTimer: number | null = null;
+  private riderWarmTimer: number | null = null;
+  private bootPosterDone = false;
 
   constructor(private container: HTMLElement) {
     const stored = localStorage.getItem('bike-rider.settings.v2');
@@ -160,8 +177,14 @@ export class Game {
       applyLanguage(this.hud?.root ?? document.body);
     });
     if (this.firstRun) this.settings.quality = autoQuality();
+    this.governor.reset(this.settings.quality);
     const camParam = this.params.get('camera');
-    if (camParam === 'chase' || camParam === 'cockpit' || camParam === 'cinematic')
+    if (
+      camParam === 'chase' ||
+      camParam === 'cockpit' ||
+      camParam === 'cinematic' ||
+      camParam === 'tank'
+    )
       this.settings.cameraMode = camParam;
     const timeParam = this.params.get('time');
     if (
@@ -185,6 +208,12 @@ export class Game {
       if (hair && HAIR[cfg.body].includes(hair)) cfg.hair = hair;
       if (this.params.get('skin')) cfg.skin = this.params.get('skin')!;
       if (this.params.get('beard')) cfg.beard = this.params.get('beard') as RiderConfig['beard'];
+      if (this.params.get('hairColor')) cfg.hairColor = this.params.get('hairColor')!;
+      if (this.params.get('turbanColor')) cfg.turbanColor = this.params.get('turbanColor')!;
+      if (this.params.has('kajal')) cfg.kajal = this.params.get('kajal') !== '0';
+      if (this.params.get('bindi')) cfg.bindi = this.params.get('bindi') as RiderConfig['bindi'];
+      if (this.params.get('earrings'))
+        cfg.earrings = this.params.get('earrings') as RiderConfig['earrings'];
       if (gearParam !== null) {
         for (const slot of Object.keys(cfg.gear) as (keyof typeof cfg.gear)[])
           cfg.gear[slot] = null;
@@ -226,7 +255,7 @@ export class Game {
     this.chase.setMode(this.settings.cameraMode);
 
     this.world = new World(this.scene, this.renderer, this.settings.quality);
-    this.world.load(this.settings.scene, this.settings.timeOfDay);
+    this.world.load(this.settings.scene, this.settings.timeOfDay, true);
     this.physics.heightAt = this.world.heightAt;
     this.chase.heightAt = this.world.heightAt;
     this.scene.add(this.bike.root);
@@ -234,9 +263,11 @@ export class Game {
     this.scene.add(this.ghost.bike.root);
     this.seatRider();
     this.rider.onLoaded = () => this.hud.setStatus(null);
-    this.applyRider(this.settings.rider, false);
+    if (!this.bootToMenu) this.applyRider(this.settings.rider, false);
     this.dust = new Dust(this.renderer.getPixelRatio());
     this.scene.add(this.dust.points);
+    this.skids = new Skids();
+    this.scene.add(this.skids.mesh);
 
     this.hud = new Hud(container, this.settings, this.input, {
       onReset: () => this.reset(true),
@@ -254,10 +285,14 @@ export class Game {
     }
     this.menu = new Menu(container, this.settings.scene, this.settings.rider, {
       onRiderChange: (cfg) => this.applyRider(cfg, true),
-      onPreview: (id) => this.switchScene(id),
+      onPreview: (id) => this.previewScene(id),
       onStart: (id) => this.startRide(id),
       onStepChange: (step) => this.onMenuStep(step),
       onFocus: (tab) => this.focusRider(tab),
+      onInspect: (action) => {
+        if (action === 'reset') this.riderStudio?.setFocus(this.menu.currentTab);
+        else this.riderStudio?.turn(action === 'left' ? -0.35 : 0.35);
+      },
       onModeChange: (mode) => track('mode_select', { mode }),
       onOpenMissions: () => this.missionsPanel.show(this.menu.current),
       onOpenGarage: () => this.openGarage(),
@@ -284,6 +319,7 @@ export class Game {
         this.refreshProgress();
       },
       onClose: () => this.closeGarage(),
+      onTestRide: () => this.startTestRide(),
     });
     this.photo = new PhotoMode(container, {
       onClose: () => this.closePhoto(),
@@ -324,6 +360,7 @@ export class Game {
 
     this.input.on('KeyR', () => !this.attract && !this.summary.visible && this.reset(true));
     this.input.on('KeyC', () => !this.attract && this.cycleCamera());
+    this.bindGarageOrbit();
     this.input.on('KeyP', () => !this.attract && !this.summary.visible && this.togglePause());
     this.input.on('Escape', () => {
       if (this.photo.visible || this.missionsPanel.visible || this.garage.visible) return;
@@ -347,11 +384,12 @@ export class Game {
     // used if the player is still on the starter when we try it later; skip auto-load so
     // switching bikes is always visible.
 
-    const skipMenu = this.params.has('nomenu') || this.autodrive;
+    const skipMenu = !this.bootToMenu;
+    let launchAfterFirstPaint = false;
     if (skipMenu) {
       this.menu.hide();
       if (this.params.has('closeup')) this.chase.setCloseUp(true);
-      if (this.urlSeed || modeParam) this.startRide(this.settings.scene);
+      launchAfterFirstPaint = !!(this.urlSeed || modeParam);
     } else {
       this.openMenu(
         this.params.get('step') === 'scene' || this.urlSeed || this.profile.totalRuns > 0
@@ -365,6 +403,7 @@ export class Game {
 
     this.clock.start();
     this.raf = requestAnimationFrame(this.frame);
+    if (launchAfterFirstPaint) window.setTimeout(() => this.startRide(this.settings.scene), 650);
     if (import.meta.env.DEV) (window as unknown as { __bikeRider?: Game }).__bikeRider = this;
   }
 
@@ -396,7 +435,11 @@ export class Game {
     phase: string;
     traffic: number;
   } {
-    const scene = this.post ? this.post.sceneInfo : this.sceneInfo;
+    const scene = this.riderStanding
+      ? this.sceneInfo
+      : this.post
+        ? this.post.sceneInfo
+        : this.sceneInfo;
     const mem = this.renderer.info.memory;
     return {
       fps: Math.round(this.fps * 10) / 10,
@@ -453,6 +496,9 @@ export class Game {
     this.refreshProgress();
     this.menu.show(step);
     this.onMenuStep(step);
+    this.warmRiderSoon();
+    this.warmWorldSoon();
+    this.warmPostSoon();
   }
 
   private refreshProgress(): void {
@@ -477,61 +523,17 @@ export class Game {
   }
 
   private riderStanding = false;
-  /** Character-screen studio lights: key from the camera side, cool fill from the other. */
-  private riderKey = new DirectionalLight(0xfff1dc, 0);
-  private riderFill = new DirectionalLight(0xc4d4ff, 0);
-  private riderLightsAdded = false;
-
   private standRider(): void {
-    const p = this.physics;
-    // Stand 1.5 m to the rider's right of the parked bike ...
-    const right = new Vector3(-p.forward.z, 0, p.forward.x);
-    const pos = p.position.clone().addScaledVector(right, 1.5).addScaledVector(p.forward, -0.2);
-    pos.y = this.world.heightAt(pos.x, pos.z);
-    // ... facing the sun, so the camera (placed along the facing direction) has the sun behind
-    // it and the face is lit instead of silhouetted against the flare.
-    const sun = this.world.atmosphere.sunDir;
-    const horiz = Math.hypot(sun.x, sun.z);
-    let ry = horiz > 0.05 ? Math.atan2(sun.x, sun.z) : p.heading + Math.PI / 2 + 0.35;
-    // Keep the bike in frame behind the rider: nudge the facing towards the road-side view.
-    ry += 0.15;
-    this.scene.add(this.rider.root);
-    this.rider.root.position.copy(pos);
-    this.rider.root.rotation.set(0, ry, 0);
     this.rider.root.scale.setScalar(1);
     this.rider.setPose('stand');
     this.riderStanding = true;
-
-    if (!this.riderLightsAdded) {
-      this.scene.add(this.riderKey, this.riderKey.target, this.riderFill, this.riderFill.target);
-      this.riderLightsAdded = true;
-    }
-    const facing = new Vector3(Math.sin(ry), 0, Math.cos(ry));
-    const side = new Vector3(facing.z, 0, -facing.x);
-    const chest = pos.clone().add(new Vector3(0, 1.2, 0));
-    this.riderKey.position
-      .copy(chest)
-      .addScaledVector(facing, 3)
-      .addScaledVector(side, -1.6)
-      .add(new Vector3(0, 2.2, 0));
-    this.riderKey.target.position.copy(chest);
-    this.riderFill.position
-      .copy(chest)
-      .addScaledVector(facing, 2.5)
-      .addScaledVector(side, 2.2)
-      .add(new Vector3(0, 0.8, 0));
-    this.riderFill.target.position.copy(chest);
-    // The studio lights top up the sun, they do not replace it: in daylight the key only lifts
-    // the shadow side of the face, at night it is the main light.
-    const night = this.world.atmosphere.isNight;
-    this.riderKey.intensity = night ? 3.2 : 1.3;
-    this.riderFill.intensity = night ? 1.1 : 0.45;
+    this.riderStudio ??= new RiderStudio(this.renderer);
+    this.riderStudio.show(this.rider.root);
   }
 
   private seatRider(): void {
+    this.riderStudio?.hide();
     this.rider.setShowHelmet(true);
-    this.riderKey.intensity = 0;
-    this.riderFill.intensity = 0;
     this.bike.lean.add(this.rider.root);
     // The GLB faces +Z (Blender -Y front), the bike faces -Z: half turn. Rig hips are at y 0.91
     // in the rest pose and the saddle top is ~0.80, so drop the root to seat the pelvis.
@@ -545,29 +547,37 @@ export class Game {
   private focusRider(tab: 'face' | 'hair' | 'gear'): void {
     if (!this.riderStanding) return;
     this.rider.setShowHelmet(tab === 'gear');
-    const base = this.rider.root.position.clone();
-    // The rider faces +Z in its local frame, i.e. world direction (sin ry, 0, cos ry); put the
-    // camera out along that direction, swung a little for a three-quarter view.
-    const yaw = this.rider.root.rotation.y - 0.4;
-    const head = tab !== 'gear';
-    this.chase.setFocus({
-      target: base.clone().add(new Vector3(0, head ? 1.42 : 0.92, 0)),
-      distance: head ? 2.0 : 4.4,
-      height: head ? 0.12 : 0.45,
-      yaw,
-      sideOffset: head ? 0.55 : 0.95,
-    });
+    this.riderStudio?.setFocus(tab);
   }
 
   private switchScene(id: SceneId): void {
     if (this.world.sceneId === id) return;
     this.settings.scene = id;
     saveSettings(this.settings);
-    this.world.load(id, this.settings.timeOfDay);
+    this.world.load(id, this.settings.timeOfDay, this.attract);
     this.world.setWeather(this.world.weatherId);
     this.applyLook();
     this.dust.setColor(this.world.dustColor);
     this.reset();
+    if (this.attract) this.warmWorldSoon();
+  }
+
+  private previewScene(id: SceneId): void {
+    if (this.world.sceneId === id) return;
+    this.pendingPreview = id;
+    if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
+    this.previewTimer = window.setTimeout(() => {
+      this.previewTimer = null;
+      if (!this.menu.visible || this.pendingPreview !== id) return;
+      this.switchScene(id);
+      this.pendingPreview = null;
+    }, 180);
+  }
+
+  private clearPreview(): void {
+    if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
+    this.previewTimer = null;
+    this.pendingPreview = null;
   }
 
   // ------------------------------------------------------------------ runs -----------------
@@ -592,7 +602,13 @@ export class Game {
     seed: Seed,
     extra: { missionId?: string; routeId?: string } = {},
   ): void {
+    this.clearPreview();
     this.switchScene(scene);
+    if (!this.world.isRealized) {
+      this.world.realize();
+      this.reset();
+    }
+    this.ensurePost();
     this.menu.hide();
     this.summary.hide();
     this.attract = false;
@@ -657,11 +673,9 @@ export class Game {
       );
     } else this.hud.setObjective(null);
     this.hud.setRun(scored, MODE_LABEL[cfg.mode]);
-    this.hud.setHint(
-      scored
-        ? '<span class="key">A</span><span class="key">D</span><span>steer</span><span class="key">W</span><span>gas</span><span>· pass traffic close for points</span>'
-        : null,
-    );
+    this.audio.setPlace(cfg.scene);
+    this.skids.clear();
+    this.hud.setHint(scored ? t('hud.hint.ride') : null);
     this.run.start(cfg);
     track('run_start', { mode: cfg.mode, scene: cfg.scene, protection: this.protection });
   }
@@ -745,6 +759,8 @@ export class Game {
     if (c.mode === 'free') return;
     this.ghost?.hide();
     this.hud.setCountdown(null);
+    this.hud.setVisor(false, false);
+    this.hud.setMinimapVisible(false);
     const score = this.scoring.rounded;
     const prev =
       c.mode === 'daily'
@@ -990,8 +1006,31 @@ export class Game {
     while (this.routePassed < prog.passed) {
       const c = r.checkpoints[this.routePassed]!;
       this.routePassed++;
+      if (c.weather) {
+        this.settings.weather = c.weather;
+        this.applyWeather(false);
+      }
+      if (c.time && c.time !== 'auto') {
+        this.settings.timeOfDay = c.time;
+        this.world.setTimeOfDay(c.time);
+        this.applyLook();
+      }
+      const buf = this.ghost?.buffer;
+      if (buf) {
+        const gt = ghostTimeAtZ(buf, -c.at);
+        if (gt !== null) {
+          const dlt = run.stats.durationS - gt;
+          this.hud.popBonus(
+            `${dlt >= 0 ? '+' : ''}${dlt.toFixed(1)}s`,
+            0,
+            dlt <= 0 ? 'corner' : 'hit',
+          );
+          this.hud.setGhostDelta(dlt);
+        }
+      }
       if (c.kind === 'dhaba') {
         this.health.hp = Math.min(1, this.health.hp + DHABA_HEAL);
+        this.audio.dhaba();
         this.hud.popBonus(
           t('route.dhaba', { name: c.name, n: Math.round(DHABA_HEAL * 100) }),
           0,
@@ -1045,6 +1084,7 @@ export class Game {
         rider.label = g.handle;
         rider.load(g.data);
         this.scene.add(rider.bike.root);
+        rider.followZ = true;
         this.others.push(rider);
       });
       if (list.length) this.hud.setStatus(`Riding with ${list.map((g) => g.handle).join(', ')}`);
@@ -1186,8 +1226,13 @@ export class Game {
     this.physics.tune = tuneFor(this.profile);
     this.physics.setChassis(bike.chassis);
     this.bike.setLook(bike);
+    const livery = this.profile.liveries[bike.id];
+    if (livery) {
+      this.bike.setPaint(livery.paint, livery.accent);
+      if (livery.plate) this.bike.setTankLabel(livery.plate);
+    }
     this.audio.setEngine(bike.chassis.engine);
-    this.hud.setBikeName(bike.name);
+    this.hud.setBikeName(livery?.plate ? `${bike.name} · ${livery.plate}` : bike.name);
     if (this.rider.root.parent === this.bike.lean) {
       this.rider.root.position.set(0, bike.chassis.seat.y, bike.chassis.seat.z);
     }
@@ -1267,7 +1312,7 @@ export class Game {
         ? `${this.scoring.rounded.toLocaleString('en-IN')} pts · ${def.place}`
         : def.place;
     try {
-      const blob = await composePhoto(this.renderer.domElement, def.name, sub);
+      const blob = await composePhoto(this.renderer.domElement, def.name, sub, this.photo.portrait);
       const outcome = await shareCard(blob, `Riding ${def.name} in Bike Rider`, this.shareUrl());
       this.hud.setStatus(
         outcome === 'shared'
@@ -1307,6 +1352,7 @@ export class Game {
           if (kmh > 45) {
             p.speed *= 0.8;
             this.chase.kick(0.45);
+            this.buzz(30);
             this.hud.popBonus('Speed breaker', 0, 'hit');
           }
         } else if (kmh > 25) {
@@ -1361,6 +1407,7 @@ export class Game {
       this.live.currentCombo = this.scoring.combo;
       const label =
         bonus.combo > 1 ? t('bonus.nearMissCombo', { n: bonus.combo }) : t('bonus.nearMiss');
+      this.buzz(12);
       this.hud.popBonus(
         nm.oncoming ? `${label} · ${t('bonus.oncoming')}` : label,
         bonus.points,
@@ -1430,9 +1477,11 @@ export class Game {
     const prevQuality = this.settings.quality;
     const prevTime = this.settings.timeOfDay;
     const prevCamera = this.settings.cameraMode;
+    if (s.qualityMode && s.qualityMode !== 'auto') s.quality = s.qualityMode;
     this.settings = s;
     saveSettings(s);
-    if (initial || s.quality !== prevQuality) this.applyQuality(s.quality);
+    if (s.qualityMode === 'auto') this.governor.reset(s.quality);
+    if (initial || s.quality !== prevQuality) this.applyQuality(s.quality, initial);
     if (initial || s.timeOfDay !== prevTime) {
       this.world.setTimeOfDay(s.timeOfDay);
       this.applyLook();
@@ -1449,7 +1498,7 @@ export class Game {
     if (!initial) track('settings_change', { quality: s.quality, time: s.timeOfDay });
   }
 
-  private applyQuality(q: Quality): void {
+  private applyQuality(q: Quality, initial = false): void {
     const dpr = window.devicePixelRatio || 1;
     const ratio = q === 'high' ? Math.min(2, dpr) : q === 'medium' ? Math.min(1.5, dpr) : 1;
     this.renderer.setPixelRatio(ratio);
@@ -1459,8 +1508,8 @@ export class Game {
     if (q === 'low') {
       this.post?.dispose();
       this.post = null;
-    } else if (!this.post) {
-      this.post = new PostFX(this.renderer, this.scene, this.camera);
+    } else if (!this.post && !(this.bootToMenu && initial)) {
+      this.ensurePost();
     }
     this.applyLook();
     this.scene.traverse((o) => {
@@ -1470,6 +1519,44 @@ export class Game {
       else mesh.material.needsUpdate = true;
     });
     this.onResize();
+  }
+
+  private ensurePost(): void {
+    if (this.post || this.settings.quality === 'low') return;
+    this.post = new PostFX(this.renderer, this.scene, this.camera);
+    this.onResize();
+    this.applyLook();
+  }
+
+  private warmPostSoon(): void {
+    if (this.post || this.settings.quality === 'low' || this.postWarmTimer !== null) return;
+    this.postWarmTimer = window.setTimeout(() => {
+      this.postWarmTimer = null;
+      if (!this.menu.visible || this.settings.quality === 'low') return;
+      this.ensurePost();
+    }, 22000);
+  }
+
+  private warmWorldSoon(): void {
+    if (this.worldWarmTimer !== null) window.clearTimeout(this.worldWarmTimer);
+    this.worldWarmTimer = window.setTimeout(() => {
+      this.worldWarmTimer = null;
+      if (!this.menu.visible || this.world.isRealized) return;
+      this.world.realize();
+      this.reset();
+      this.applyLook();
+    }, 20000);
+  }
+
+  private warmRiderSoon(): void {
+    if (this.rider.ready || this.riderWarmTimer !== null) return;
+    this.riderWarmTimer = window.setTimeout(() => {
+      this.riderWarmTimer = null;
+      if (this.rider.ready) return;
+      this.applyRider(this.settings.rider, false);
+      if (this.menu.visible && this.menu.currentStep === 'rider')
+        this.focusRider(this.menu.currentTab);
+    }, 450);
   }
 
   private onResize = (): void => {
@@ -1495,6 +1582,13 @@ export class Game {
       this.fpsFrames = 0;
     }
 
+    if (this.settings.qualityMode === 'auto' && !this.paused) {
+      const next = this.governor.sample(rawDt * 1000);
+      if (next && next !== this.settings.quality) {
+        this.settings.quality = next;
+        this.applyQuality(next);
+      }
+    }
     if (!this.paused) this.step(dt);
     else this.audio.update(0.1, 0, true);
     if (this.photo.visible) {
@@ -1502,16 +1596,32 @@ export class Game {
       this.world.update(0, this.physics.position, this.camera.position, 0, this.physics.forward);
     }
 
-    if (this.post) this.post.render(dt);
+    if (this.riderStanding && this.riderStudio) {
+      this.riderStudio.render(this.container.clientWidth, this.container.clientHeight);
+      this.sceneInfo.calls = this.renderer.info.render.calls;
+      this.sceneInfo.triangles = this.renderer.info.render.triangles;
+    } else if (this.post) this.post.render(dt);
     else {
       this.renderer.render(this.scene, this.camera);
       this.sceneInfo.calls = this.renderer.info.render.calls;
       this.sceneInfo.triangles = this.renderer.info.render.triangles;
     }
+    this.dismissBootPoster();
   };
 
   /** Scene-pass draw stats when post-processing is off (PostFX keeps its own otherwise). */
   private sceneInfo: SceneRenderInfo = { calls: 0, triangles: 0 };
+
+  private dismissBootPoster(): void {
+    if (this.bootPosterDone) return;
+    this.bootPosterDone = true;
+    window.setTimeout(() => {
+      const poster = this.container.querySelector<HTMLElement>('.boot-poster');
+      if (!poster) return;
+      poster.classList.add('exit');
+      window.setTimeout(() => poster.remove(), 450);
+    }, 120);
+  }
 
   /** One simulation tick (input, physics, traffic, scoring, HUD). No rendering. */
   private step(dt: number): void {
@@ -1532,10 +1642,17 @@ export class Game {
       this.input.setVirtual('right', false);
     }
     this.input.update(dt);
+    if (this.input.cameraPulse && !this.attract) this.cycleCamera();
     const drive =
-      this.garage.visible || (!this.attract && !run.controllable)
-        ? NO_INPUT
-        : this.input.state;
+      this.garage.visible || (!this.attract && !run.controllable) ? NO_INPUT : this.input.state;
+    if (this.hornCool > 0) this.hornCool -= dt;
+    if (drive.horn && !this.hornHeld && this.hornCool <= 0 && run.controllable) {
+      const lat = this.world.path.lateral(this.physics.position.x, this.physics.position.z);
+      this.world.traffic?.honk(lat, this.physics.position.z);
+      this.audio.honk();
+      this.hornCool = 0.35;
+    }
+    this.hornHeld = drive.horn;
 
     this.accumulator += simDt;
     while (this.accumulator >= FIXED_DT) {
@@ -1555,6 +1672,8 @@ export class Game {
         if (this.mission) this.updateMission(FIXED_DT, step, braking);
         if (this.route) this.updateRoute();
         this.health.tick(FIXED_DT);
+        const lat = this.world.path.lateral(p.position.x, p.position.z);
+        const drafting = !!this.world.traffic?.draftAhead(lat, p.position.z);
         const bonus = this.scoring.update(
           FIXED_DT,
           step,
@@ -1562,7 +1681,13 @@ export class Game {
           p.surface,
           braking,
           p.yawRate,
+          { keepComboOnBrake: p.stoppie > 0.2, drafting },
         );
+        this.hud.setDraft(drafting);
+        if (p.trickEvent) {
+          const tb = this.scoring.trick(p.trickEvent, p.trickDuration);
+          this.hud.popBonus(tb.label, tb.points, 'trick');
+        }
         if (bonus)
           this.hud.popBonus(
             bonus.kind === 'corner'
@@ -1583,13 +1708,14 @@ export class Game {
         this.crashLabel = '';
         this.physics.crash(1);
         run.crash('lost');
-      } else if (run.phase !== 'crashed') this.reset();
+      } else if (run.phase !== 'crashed' && run.phase !== 'summary' && !this.summary.visible)
+        this.reset();
     }
     if (run.phase === 'crashed' && run.sinceCrash >= CRASH_HOLD_S) run.finish();
     this.syncBikeTransform();
     if (run.active || run.phase === 'countdown') {
       this.ghost?.update(run.stats.durationS);
-      for (const g of this.others) g.update(run.stats.durationS);
+      for (const g of this.others) g.updateFollowZ(p.position.z, run.stats.durationS);
     }
 
     const gravelly = p.surface !== 'asphalt' && p.surface !== 'wet' ? 1 : 0;
@@ -1604,10 +1730,34 @@ export class Game {
     const skid = (braking && Math.abs(p.speed) > 8) || p.crashed ? 25 : 0;
     const dustRate = gravelly ? 20 + p.speedRatio * 70 : skid;
     this.dust.update(simDt, _rearContact, _back, Math.abs(p.speed), dustRate);
+    const _right = new Vector3(-p.forward.z, 0, p.forward.x);
+    const skidRate =
+      this.settings.quality === 'low'
+        ? 0
+        : (braking || Math.abs(p.lean) > 0.25) &&
+            (p.surface === 'asphalt' || p.surface === 'wet') &&
+            Math.abs(p.speed) > 8 &&
+            !p.crashed
+          ? 14
+          : 0;
+    this.skids.update(simDt, _rearContact, _right, skidRate);
 
     this.bike.setLights(this.world.headlightsOn, braking && Math.abs(p.speed) > 0.5);
-    this.rider.update(p.steerAngle, dt);
-    this.audio.update(p.crashed ? 0.1 : p.rpm, drive.throttle, this.attract);
+    this.rider.update(p.steerAngle, dt, p.crashed);
+    this.audio.update(p.crashed ? 0.1 : p.rpm, drive.throttle, this.attract, {
+      gear: p.gear,
+      speedRatio: p.speedRatio,
+      sceneId: this.world.sceneId,
+    });
+    const riding = run.controllable && !this.summary.visible && !this.attract;
+    this.hud.setVisor(
+      riding && (this.chase.mode === 'cockpit' || this.chase.mode === 'tank'),
+      this.world.weatherId === 'rain' || this.world.weatherId === 'fog',
+    );
+    if (this.testRideUntil && this.elapsed > this.testRideUntil) {
+      this.testRideUntil = 0;
+      this.openGarage();
+    }
 
     if (!this.attract) {
       this.hud.update({
@@ -1624,6 +1774,8 @@ export class Game {
         triangles: (this.post ? this.post.sceneInfo : this.sceneInfo).triangles,
         moving: p.speedKmh > 2,
       });
+      if (riding) this.updateMinimap();
+      else this.hud.setMinimapVisible(false);
       if (run.scored) {
         this.hud.updateScore(
           this.scoring.score,
@@ -1693,6 +1845,70 @@ export class Game {
     this.input.setVirtual('left', err < -0.4);
   }
 
+  private buzz(ms: number): void {
+    if (!this.settings.haptics) return;
+    try {
+      navigator.vibrate?.(ms);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private startTestRide(): void {
+    this.closeGarage();
+    this.beginRun({ mode: 'free', scene: this.world.sceneId, seed: randomSeed() });
+    this.testRideUntil = this.elapsed + 20;
+    this.hud.setStatus('Test ride');
+    setTimeout(() => this.hud.setStatus(null), 2000);
+  }
+
+  private bindGarageOrbit(): void {
+    const el = this.renderer.domElement;
+    el.addEventListener('pointerdown', (e) => {
+      if (!this.garage.visible) return;
+      this.garageDrag = { x: e.clientX, yaw: this.physics.heading + Math.PI * 0.55 };
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!this.garageDrag || !this.garage.visible) return;
+      const yaw = this.garageDrag.yaw - (e.clientX - this.garageDrag.x) * 0.01;
+      this.chase.setFocus({
+        target: this.physics.position.clone().add(new Vector3(0, 0.55, 0)),
+        distance: 6.2,
+        height: 1.35,
+        yaw,
+        sideOffset: 0,
+        screenLift: 1.85,
+        fov: 38,
+      });
+    });
+    window.addEventListener('pointerup', () => {
+      this.garageDrag = null;
+    });
+  }
+
+  private updateMinimap(): void {
+    const p = this.physics;
+    const road: { x: number; z: number }[] = [];
+    for (let d = -180; d <= 180; d += 12) {
+      const z = p.position.z + d;
+      road.push({ x: this.world.path.centerX(z), z });
+    }
+    const buf = this.ghost?.buffer;
+    let ghost: { x: number; z: number } | null = null;
+    if (buf && this.run.active) {
+      const sample: GhostSample = { x: 0, y: 0, z: 0, heading: 0, lean: 0, speed: 0 };
+      if (sampleGhost(buf, this.run.stats.durationS, sample)) ghost = { x: sample.x, z: sample.z };
+    }
+    const next = this.route?.checkpoints[this.routePassed];
+    const gate = next ? { x: this.world.path.centerX(-next.at), z: -next.at } : null;
+    this.hud.setMinimap(
+      road,
+      { x: p.position.x, z: p.position.z, heading: p.heading },
+      ghost,
+      gate,
+    );
+  }
+
   private syncBikeTransform(): void {
     const p = this.physics;
     this.bike.root.position.copy(p.position);
@@ -1705,6 +1921,10 @@ export class Game {
 
   dispose(): void {
     cancelAnimationFrame(this.raf);
+    this.clearPreview();
+    if (this.postWarmTimer !== null) window.clearTimeout(this.postWarmTimer);
+    if (this.worldWarmTimer !== null) window.clearTimeout(this.worldWarmTimer);
+    if (this.riderWarmTimer !== null) window.clearTimeout(this.riderWarmTimer);
     window.removeEventListener('resize', this.onResize);
     this.input.dispose();
     this.audio.dispose();
@@ -1717,6 +1937,7 @@ export class Game {
     this.clearOthers();
     this.post?.dispose();
     this.world.dispose();
+    this.riderStudio?.dispose();
     this.renderer.dispose();
   }
 }

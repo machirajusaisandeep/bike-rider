@@ -136,7 +136,12 @@ function roadTexture(o: RoadOpts): CanvasTexture {
     const l = Math.random() < 0.5;
     const v = l ? 30 + Math.random() * 40 : -(20 + Math.random() * 30);
     ctx.fillStyle = `rgba(${o.base[0] + v},${o.base[1] + v},${o.base[2] + v},${0.25 + Math.random() * 0.35})`;
-    ctx.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 3, 2 + Math.random() * 3);
+    ctx.fillRect(
+      Math.random() * w,
+      Math.random() * h,
+      2 + Math.random() * 3,
+      2 + Math.random() * 3,
+    );
   }
   // large soft tonal blotches so the surface does not look like a uniform field
   for (let i = 0; i < 14; i++) {
@@ -319,7 +324,15 @@ export function gravelTexture(): CanvasTexture {
     const v = 90 + Math.random() * 90;
     ctx.fillStyle = `rgba(${v},${v - 8},${v - 22},0.8)`;
     ctx.beginPath();
-    ctx.ellipse(Math.random() * 512, Math.random() * 512, 2 + Math.random() * 4, 1.5 + Math.random() * 3, Math.random() * 3, 0, Math.PI * 2);
+    ctx.ellipse(
+      Math.random() * 512,
+      Math.random() * 512,
+      2 + Math.random() * 4,
+      1.5 + Math.random() * 3,
+      Math.random() * 3,
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
   }
   return finish(c);
@@ -448,7 +461,9 @@ export function signTexture(label: string, style: SignStyle = 'nh'): CanvasTextu
   const lines = label.split('\n');
   const size = lines.length > 1 ? 66 : label.length > 12 ? 62 : 84;
   ctx.font = `bold ${size}px "Helvetica Neue", Arial, sans-serif`;
-  lines.forEach((l, i) => ctx.fillText(l, w / 2, h / 2 + (i - (lines.length - 1) / 2) * size * 1.1));
+  lines.forEach((l, i) =>
+    ctx.fillText(l, w / 2, h / 2 + (i - (lines.length - 1) / 2) * size * 1.1),
+  );
   if (style === 'bro') {
     ctx.font = 'bold 26px "Helvetica Neue", Arial, sans-serif';
     ctx.fillText('B R O · PROJECT HIMANK', w / 2, h - 34);
@@ -456,7 +471,12 @@ export function signTexture(label: string, style: SignStyle = 'nh'): CanvasTextu
   // rust streaks / dust so it does not look freshly printed
   for (let i = 0; i < 40; i++) {
     ctx.fillStyle = `rgba(80,60,40,${0.05 + Math.random() * 0.12})`;
-    ctx.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 30, 1 + Math.random() * 3);
+    ctx.fillRect(
+      Math.random() * w,
+      Math.random() * h,
+      2 + Math.random() * 30,
+      1 + Math.random() * 3,
+    );
   }
   const tex = new CanvasTexture(c);
   tex.colorSpace = SRGBColorSpace;
@@ -518,7 +538,10 @@ export function grassBillboardTexture(shrub = false, dry = false): CanvasTexture
  * Building facade: rows of windows; emissive variant lights a random subset. `style` picks a
  * glass tech-park grid or a plastered apartment block with balconies and AC units.
  */
-export function facadeTexture(emissive: boolean, style: 'glass' | 'flats' = 'glass'): CanvasTexture {
+export function facadeTexture(
+  emissive: boolean,
+  style: 'glass' | 'flats' = 'glass',
+): CanvasTexture {
   const w = 512;
   const h = 1024;
   const [c, ctx] = canvas(w, h);
@@ -541,7 +564,8 @@ export function facadeTexture(emissive: boolean, style: 'glass' | 'flats' = 'gla
         const t = style === 'glass' ? 60 + Math.random() * 40 : 40 + Math.random() * 30;
         ctx.fillStyle = `rgb(${t},${t + 15},${t + 30})`;
       }
-      if (style === 'glass') ctx.fillRect(col * cw + cw * 0.08, r * rh + rh * 0.12, cw * 0.84, rh * 0.7);
+      if (style === 'glass')
+        ctx.fillRect(col * cw + cw * 0.08, r * rh + rh * 0.12, cw * 0.84, rh * 0.7);
       else ctx.fillRect(col * cw + cw * 0.22, r * rh + rh * 0.25, cw * 0.56, rh * 0.45);
     }
   }
@@ -568,7 +592,12 @@ export function facadeTexture(emissive: boolean, style: 'glass' | 'flats' = 'gla
       }
       for (let i = 0; i < 30; i++) {
         ctx.fillStyle = `rgba(60,50,40,${0.05 + Math.random() * 0.1})`;
-        ctx.fillRect(Math.random() * w, Math.random() * h, 6 + Math.random() * 20, 40 + Math.random() * 200);
+        ctx.fillRect(
+          Math.random() * w,
+          Math.random() * h,
+          6 + Math.random() * 20,
+          40 + Math.random() * 200,
+        );
       }
     }
   }
@@ -622,7 +651,12 @@ export function parapetTexture(): CanvasTexture {
   for (let i = 0; i < 300; i++) {
     const v = 120 + Math.random() * 80;
     ctx.fillStyle = `rgba(${v},${v - 6},${v - 16},${0.15 + Math.random() * 0.3})`;
-    ctx.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 6, 1 + Math.random() * 3);
+    ctx.fillRect(
+      Math.random() * w,
+      Math.random() * h,
+      2 + Math.random() * 6,
+      1 + Math.random() * 3,
+    );
   }
   return finish(c, 4);
 }

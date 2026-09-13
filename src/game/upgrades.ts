@@ -2,7 +2,14 @@ import type { Profile, UpgradeKey } from '../core/profile';
 import { BIKES, bikeById, type BikeDef } from './bikes';
 
 export type { BikeDef, BikeChassis, BikeFamily, BikeCategory } from './bikes';
-export { BIKES, BIKE_BY_ID, bikeById, resolveBikeId, CATEGORY_LABEL, CATEGORY_ORDER } from './bikes';
+export {
+  BIKES,
+  BIKE_BY_ID,
+  bikeById,
+  resolveBikeId,
+  CATEGORY_LABEL,
+  CATEGORY_ORDER,
+} from './bikes';
 
 /**
  * Coins → bike tuning. Effects are multipliers applied to BikePhysics.tune, so the arcade feel

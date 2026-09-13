@@ -12,10 +12,22 @@ import {
   type BikeDef,
 } from '../game/upgrades';
 
+const SWATCHES = [
+  '#f2f2f2',
+  '#2a4d3a',
+  '#1a1a1c',
+  '#c45a2a',
+  '#2a3f8f',
+  '#e0a100',
+  '#6b1f1f',
+  '#37474f',
+];
+
 export interface GarageCallbacks {
   /** Profile changed (purchase / bike selection): persist and retune. */
   onChange: () => void;
   onClose: () => void;
+  onTestRide: () => void;
 }
 
 /** Upgrades and bikes. Mutates the profile through upgrades.ts helpers. */
@@ -103,6 +115,11 @@ export class GaragePanel {
           </div>
         </header>
         <section class="garage-bikes">${bikes}</section>
+        <section class="garage-livery">
+          <div class="swatches">${SWATCHES.map((hex) => `<button type="button" class="swatch" data-paint="${hex}" style="background:${hex}" aria-label="${hex}"></button>`).join('')}</div>
+          <label class="plate-label">Plate <input class="plate-input" maxlength="8" value="${(p.liveries[p.bike]?.plate ?? '').toUpperCase()}" placeholder="KA 01 AB" /></label>
+          <button type="button" class="btn-ghost test-ride">Test ride</button>
+        </section>
         <section class="garage-upgrades">
           <h3>Upgrades</h3>
           <div class="upg-list">${upgrades}</div>
@@ -127,6 +144,32 @@ export class GaragePanel {
         }
       }),
     );
+    this.root.querySelectorAll<HTMLButtonElement>('.swatch').forEach((b) =>
+      b.addEventListener('click', () => {
+        const paint = b.dataset.paint!;
+        const prof = this.profile();
+        const cur = BIKES.find((x) => x.id === prof.bike)!;
+        prof.liveries[prof.bike] = {
+          paint,
+          accent: prof.liveries[prof.bike]?.accent ?? cur.accent,
+          plate: prof.liveries[prof.bike]?.plate ?? '',
+        };
+        this.cb.onChange();
+      }),
+    );
+    const plate = this.root.querySelector<HTMLInputElement>('.plate-input');
+    plate?.addEventListener('change', () => {
+      const prof = this.profile();
+      const cur = BIKES.find((x) => x.id === prof.bike)!;
+      const prev = prof.liveries[prof.bike];
+      prof.liveries[prof.bike] = {
+        paint: prev?.paint ?? cur.paint,
+        accent: prev?.accent ?? cur.accent,
+        plate: (plate.value || '').toUpperCase().slice(0, 8),
+      };
+      this.cb.onChange();
+    });
+    this.root.querySelector('.test-ride')?.addEventListener('click', () => this.cb.onTestRide());
   }
 
   private markCurrent(id: string): void {

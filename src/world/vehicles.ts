@@ -10,15 +10,7 @@ import type { SceneId } from './scenes';
  * Dimensions are metres and matter for gameplay: halfW / halfL are the collision box.
  */
 export type VehicleKind =
-  | 'auto'
-  | 'hatch'
-  | 'suv'
-  | 'truck'
-  | 'bus'
-  | 'tanker'
-  | 'scooter'
-  | 'bike'
-  | 'tempo';
+  'auto' | 'hatch' | 'suv' | 'truck' | 'bus' | 'tanker' | 'scooter' | 'bike' | 'tempo';
 
 export interface VehicleSpec {
   kind: VehicleKind;
@@ -115,12 +107,12 @@ const box = (
   variance = 0.06,
 ): BufferGeometry => place(colorize(new BoxGeometry(w, h, d), hex, variance), x, y, z);
 
-/** Lamp glass: flagged emissive. */
-const lamp = (w: number, h: number, hex: number, x: number, y: number, z: number): BufferGeometry =>
-  place(colorize(new BoxGeometry(w, h, 0.06), hex, 0, 1), x, y, z);
-
 const HEAD = 0xffe7b0;
 const TAIL = 0xd42020;
+
+/** Lamp glass: lampK 1 = head, 2 = tail (brake/flash instance attrs). */
+const lamp = (w: number, h: number, hex: number, x: number, y: number, z: number): BufferGeometry =>
+  place(colorize(new BoxGeometry(w, h, 0.06), hex, 0, hex === TAIL ? 2 : 1), x, y, z);
 const GLASS = 0x8fb8cc;
 
 const PAINT = {
@@ -131,20 +123,64 @@ const PAINT = {
 };
 
 /** State-transport liveries and auto canopies by region. */
-const REGION: Record<
-  SceneId,
-  { bus: [number, number][]; autoHood: number; taxi: boolean }
-> = {
+const REGION: Record<SceneId, { bus: [number, number][]; autoHood: number; taxi: boolean }> = {
   // Kerala KSRTC: red with a yellow band; a few white "Swift" units.
-  munnar: { bus: [[0xb8232a, 0xe0a100], [0xb8232a, 0xe0a100], [0xf3f3f3, 0x2a9ad8]], autoHood: 0x1a1a1a, taxi: false },
-  wayanad: { bus: [[0xb8232a, 0xe0a100], [0xb8232a, 0xe0a100], [0xf3f3f3, 0x2a9ad8]], autoHood: 0x1a1a1a, taxi: false },
-  varkala: { bus: [[0xb8232a, 0xe0a100], [0xf3f3f3, 0x2a9ad8]], autoHood: 0x1a1a1a, taxi: false },
+  munnar: {
+    bus: [
+      [0xb8232a, 0xe0a100],
+      [0xb8232a, 0xe0a100],
+      [0xf3f3f3, 0x2a9ad8],
+    ],
+    autoHood: 0x1a1a1a,
+    taxi: false,
+  },
+  wayanad: {
+    bus: [
+      [0xb8232a, 0xe0a100],
+      [0xb8232a, 0xe0a100],
+      [0xf3f3f3, 0x2a9ad8],
+    ],
+    autoHood: 0x1a1a1a,
+    taxi: false,
+  },
+  varkala: {
+    bus: [
+      [0xb8232a, 0xe0a100],
+      [0xf3f3f3, 0x2a9ad8],
+    ],
+    autoHood: 0x1a1a1a,
+    taxi: false,
+  },
   // Tamil Nadu TNSTC: green over cream, some brown town buses.
-  ooty: { bus: [[0x2f7d4a, 0xe9e2c8], [0x2f7d4a, 0xe9e2c8], [0x7a5a3a, 0xe9e2c8]], autoHood: 0x1a1a1a, taxi: false },
+  ooty: {
+    bus: [
+      [0x2f7d4a, 0xe9e2c8],
+      [0x2f7d4a, 0xe9e2c8],
+      [0x7a5a3a, 0xe9e2c8],
+    ],
+    autoHood: 0x1a1a1a,
+    taxi: false,
+  },
   // Ladakh: white JKSRTC / HRTC with a blue or green band.
-  ladakh: { bus: [[0xf3f3f3, 0x1f6f8b], [0xf3f3f3, 0x2f7d4a]], autoHood: 0x2a4b3f, taxi: false },
+  ladakh: {
+    bus: [
+      [0xf3f3f3, 0x1f6f8b],
+      [0xf3f3f3, 0x2f7d4a],
+    ],
+    autoHood: 0x2a4b3f,
+    taxi: false,
+  },
   // BMTC: blue-white ordinary buses and the purple Vajra Volvos.
-  bengaluru: { bus: [[0x1f6f8b, 0xf3f3f3], [0x1f6f8b, 0xf3f3f3], [0x5a3f9c, 0xf3f3f3], [0x2f7d4a, 0xf3f3f3]], autoHood: 0x1a1a1a, taxi: true },
+  bengaluru: {
+    bus: [
+      [0x1f6f8b, 0xf3f3f3],
+      [0x1f6f8b, 0xf3f3f3],
+      [0x5a3f9c, 0xf3f3f3],
+      [0x2f7d4a, 0xf3f3f3],
+    ],
+    autoHood: 0x1a1a1a,
+    taxi: true,
+  },
 };
 
 function pick<T>(arr: T[], rnd: () => number): T {
@@ -198,10 +234,24 @@ export function buildVehicle(
         wheel(0, -0.7, 0.24, 0.1),
         wheel(0, 0.6, 0.24, 0.1),
         // rider
-        box(0.42, 0.55, 0.32, pick([0x445566, 0xd8d8d0, 0x8a3a3a, 0x2f5b8f], rnd), 0, 1.15, 0.2, 0.1),
+        box(
+          0.42,
+          0.55,
+          0.32,
+          pick([0x445566, 0xd8d8d0, 0x8a3a3a, 0x2f5b8f], rnd),
+          0,
+          1.15,
+          0.2,
+          0.1,
+        ),
         box(0.12, 0.45, 0.14, 0x2b3a5a, -0.18, 0.75, 0.05, 0.05), // legs
         box(0.12, 0.45, 0.14, 0x2b3a5a, 0.18, 0.75, 0.05, 0.05),
-        place(colorize(new SphereGeometry(0.16, 8, 6), pick([0x111111, 0xdddddd, 0xd83b3b], rnd)), 0, 1.6, 0.18),
+        place(
+          colorize(new SphereGeometry(0.16, 8, 6), pick([0x111111, 0xdddddd, 0xd83b3b], rnd)),
+          0,
+          1.6,
+          0.18,
+        ),
       ];
       return merge(parts);
     }
@@ -221,10 +271,27 @@ export function buildVehicle(
         wheel(0, -0.78, 0.3, 0.1),
         wheel(0, 0.7, 0.3, 0.12),
         // rider
-        box(0.42, 0.5, 0.34, pick([0x445566, 0xd8d8d0, 0x8a3a3a, 0x2f5b8f, 0x111111], rnd), 0, 1.15, 0.15, 0.1),
+        box(
+          0.42,
+          0.5,
+          0.34,
+          pick([0x445566, 0xd8d8d0, 0x8a3a3a, 0x2f5b8f, 0x111111], rnd),
+          0,
+          1.15,
+          0.15,
+          0.1,
+        ),
         box(0.12, 0.45, 0.14, 0x2b3a5a, -0.2, 0.7, 0.1, 0.05),
         box(0.12, 0.45, 0.14, 0x2b3a5a, 0.2, 0.7, 0.1, 0.05),
-        place(colorize(new SphereGeometry(0.16, 8, 6), pick([0x111111, 0xdddddd, 0xd83b3b, 0xe0a100], rnd)), 0, 1.58, 0.0),
+        place(
+          colorize(
+            new SphereGeometry(0.16, 8, 6),
+            pick([0x111111, 0xdddddd, 0xd83b3b, 0xe0a100], rnd),
+          ),
+          0,
+          1.58,
+          0.0,
+        ),
       ];
       return merge(parts);
     }
@@ -295,7 +362,16 @@ export function buildVehicle(
         box(2.4, 0.3, 5.0, 0x3a2a1a, 0, 0.95, 0.9, 0.1),
         box(2.4, 1.3, 5.0, 0xc9a86a, 0, 1.75, 0.9, 0.12),
         box(2.44, 0.3, 5.02, panel, 0, 1.4, 0.9, 0.03), // painted stripe
-        box(2.2, 0.55, 4.6, pick([0x2f5b8f, 0x8a8a8a, 0x2a6b3f, 0xd9822b], rnd), 0, 2.68, 0.9, 0.05),
+        box(
+          2.2,
+          0.55,
+          4.6,
+          pick([0x2f5b8f, 0x8a8a8a, 0x2a6b3f, 0xd9822b], rnd),
+          0,
+          2.68,
+          0.9,
+          0.05,
+        ),
         box(2.3, 0.45, 0.06, 0xf0efe8, 0, 2.2, 3.42, 0.02), // tail board (HORN OK PLEASE)
         box(0.5, 0.12, 0.03, 0xe9e7df, 0, 0.9, -3.72, 0),
         lamp(0.45, 0.2, HEAD, -0.8, 1.05, -3.72),
@@ -349,7 +425,11 @@ export function buildVehicle(
         box(2.4, 0.5, 0.3, 0x1a1a1a, 0, 0.6, -4.55, 0),
         box(2.4, 0.3, 6.6, 0x2a2a2a, 0, 0.95, 0.9, 0.1), // chassis
         place(
-          colorize(new CylinderGeometry(1.05, 1.05, 6.4, 14), pick([0xe8e8e8, 0xd8d8d8, 0xe0a100], rnd), 0.05),
+          colorize(
+            new CylinderGeometry(1.05, 1.05, 6.4, 14),
+            pick([0xe8e8e8, 0xd8d8d8, 0xe0a100], rnd),
+            0.05,
+          ),
           0,
           2.0,
           0.9,
@@ -400,14 +480,7 @@ export function buildVehicle(
 // --------------------------------------------------------------------------------- hazards ---
 
 export type HazardKind =
-  | 'cow'
-  | 'pothole'
-  | 'breaker'
-  | 'rock'
-  | 'puddle'
-  | 'barrel'
-  | 'goat'
-  | 'pier';
+  'cow' | 'pothole' | 'breaker' | 'rock' | 'puddle' | 'barrel' | 'goat' | 'pier';
 
 export type HazardEffect = 'solid' | 'bump' | 'slick';
 

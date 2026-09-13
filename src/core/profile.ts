@@ -36,6 +36,7 @@ export interface Profile {
   routesDone: string[];
   unlocks: string[];
   onboarded: boolean;
+  liveries: Record<string, { paint: string; accent: string; plate: string }>;
 }
 
 const KEY = 'bike-rider.profile.v1';
@@ -54,6 +55,7 @@ export const DEFAULT_PROFILE: Profile = {
   routesDone: [],
   unlocks: [],
   onboarded: false,
+  liveries: {},
 };
 
 export function loadProfile(): Profile {
@@ -66,6 +68,7 @@ export function loadProfile(): Profile {
       ...p,
       daily: { ...DEFAULT_PROFILE.daily, ...(p.daily ?? {}) },
       upgrades: { ...DEFAULT_PROFILE.upgrades, ...(p.upgrades ?? {}) },
+      liveries: { ...DEFAULT_PROFILE.liveries, ...(p.liveries ?? {}) },
     };
     if (!Array.isArray(out.bikes) || out.bikes.length === 0) out.bikes = ['scram'];
     if (!out.bikes.includes(out.bike)) out.bike = out.bikes[0]!;

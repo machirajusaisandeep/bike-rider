@@ -2,7 +2,6 @@ import type { Input } from '../core/Input';
 import {
   isTouchDevice,
   type CameraMode,
-  type Quality,
   type Settings,
   type TimeOfDay,
   type Units,
@@ -104,6 +103,10 @@ export class Hud {
   private lastScoreText = '';
   private perf = false;
   private bikeNameEl!: HTMLElement;
+  private visorEl!: HTMLElement;
+  private ghostChip!: HTMLElement;
+  private miniEl!: HTMLCanvasElement;
+  private draftChip!: HTMLElement;
 
   constructor(
     parent: HTMLElement,
@@ -114,6 +117,9 @@ export class Hud {
     this.settings = settings;
     this.root = el('div', 'hud');
     parent.appendChild(this.root);
+    this.visorEl = el('div', 'visor');
+    this.visorEl.hidden = true;
+    this.root.appendChild(this.visorEl);
 
     // --- top-left: identity + route ------------------------------------------------
     const tl = el('div', 'hud-corner hud-tl');
@@ -126,7 +132,18 @@ export class Hud {
     this.fpsEl = el('span', 'chip chip-fps', '60 fps');
     this.protectEl = el('span', 'chip chip-protect', '');
     this.protectEl.title = 'Protection score from your riding gear';
-    route.append(this.distEl, this.surfaceEl, this.protectEl, this.fpsEl);
+    this.ghostChip = el('span', 'chip chip-ghost');
+    this.ghostChip.hidden = true;
+    this.draftChip = el('span', 'chip chip-draft', 'Draft');
+    this.draftChip.hidden = true;
+    route.append(
+      this.distEl,
+      this.surfaceEl,
+      this.protectEl,
+      this.ghostChip,
+      this.draftChip,
+      this.fpsEl,
+    );
     tl.appendChild(route);
     this.root.appendChild(tl);
 
@@ -268,6 +285,12 @@ export class Hud {
     this.touchEl = this.buildTouch();
     this.root.appendChild(this.touchEl);
     this.applyTouchVisibility();
+
+    this.miniEl = document.createElement('canvas');
+    this.miniEl.className = 'minimap';
+    this.miniEl.width = 96;
+    this.miniEl.height = 96;
+    this.root.appendChild(this.miniEl);
   }
 
   // -------------------------------------------------------------------------------------
@@ -321,7 +344,8 @@ export class Hud {
     head.appendChild(this.iconButton(ICONS.close, 'Close', () => this.toggleSettings(false)));
     panel.appendChild(head);
     panel.appendChild(
-      segmented<Quality>('set.quality', 'quality', [
+      segmented<Settings['qualityMode']>('set.quality', 'qualityMode', [
+        { v: 'auto', l: 'Auto' },
         { v: 'low', l: 'Low' },
         { v: 'medium', l: 'Medium' },
         { v: 'high', l: 'High' },
@@ -357,6 +381,7 @@ export class Hud {
         { v: 'chase', l: 'Chase' },
         { v: 'cockpit', l: 'Cockpit' },
         { v: 'cinematic', l: 'Cinematic' },
+        { v: 'tank', l: 'Tank' },
       ]),
     );
     panel.appendChild(
@@ -372,6 +397,30 @@ export class Hud {
         { v: 'off', l: 'Off' },
       ]),
     );
+    {
+      const row = el('div', 'row');
+      const lab = el('div', 'row-label', 'Haptics');
+      lab.dataset.i18n = 'set.haptics';
+      row.appendChild(lab);
+      const seg = el('div', 'seg');
+      for (const o of [
+        { v: true, l: 'On' },
+        { v: false, l: 'Off' },
+      ] as const) {
+        const b = el('button', 'seg-btn', o.l);
+        b.type = 'button';
+        if (this.settings.haptics === o.v) b.classList.add('active');
+        b.addEventListener('click', () => {
+          this.settings.haptics = o.v;
+          seg.querySelectorAll('.seg-btn').forEach((x) => x.classList.remove('active'));
+          b.classList.add('active');
+          this.emitSettings();
+        });
+        seg.appendChild(b);
+      }
+      row.appendChild(seg);
+      panel.appendChild(row);
+    }
     panel.appendChild(
       el(
         'div',
@@ -384,7 +433,7 @@ export class Hud {
 
   private buildTouch(): HTMLElement {
     const wrap = el('div', 'touch');
-    const mk = (cls: string, html: string, action: 'left' | 'right' | 'up' | 'down') => {
+    const mk = (cls: string, html: string, action: 'left' | 'right' | 'up' | 'down' | 'horn') => {
       const b = el('div', `touch-btn ${cls}`, html);
       const on = (e: Event) => {
         e.preventDefault();
@@ -406,7 +455,7 @@ export class Hud {
     const left = el('div', 'touch-group touch-left');
     left.append(mk('', '◀', 'left'), mk('', '▶', 'right'));
     const right = el('div', 'touch-group touch-right');
-    right.append(mk('brake', 'BRAKE', 'down'), mk('gas', 'GAS', 'up'));
+    right.append(mk('horn', 'H', 'horn'), mk('brake', 'BRAKE', 'down'), mk('gas', 'GAS', 'up'));
     wrap.append(left, right);
     return wrap;
   }
@@ -521,6 +570,78 @@ export class Hud {
 
   setBikeName(name: string): void {
     this.bikeNameEl.textContent = name;
+  }
+
+  setVisor(on: boolean, fog: boolean): void {
+    this.visorEl.hidden = !on;
+    this.visorEl.classList.toggle('fog', fog);
+  }
+
+  setGhostDelta(seconds: number | null): void {
+    if (seconds === null || !Number.isFinite(seconds)) {
+      this.ghostChip.hidden = true;
+      return;
+    }
+    this.ghostChip.hidden = false;
+    const sign = seconds >= 0 ? '+' : '−';
+    this.ghostChip.textContent = `PB ${sign}${Math.abs(seconds).toFixed(1)}`;
+    this.ghostChip.classList.toggle('ahead', seconds < 0);
+  }
+
+  setDraft(on: boolean): void {
+    this.draftChip.hidden = !on;
+  }
+
+  setMinimapVisible(on: boolean): void {
+    this.miniEl.hidden = !on;
+  }
+
+  setMinimap(
+    road: { x: number; z: number }[],
+    bike: { x: number; z: number; heading: number },
+    ghost?: { x: number; z: number } | null,
+    gate?: { x: number; z: number } | null,
+  ): void {
+    this.miniEl.hidden = false;
+    const c = this.miniEl;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const w = c.width;
+    ctx.clearRect(0, 0, w, w);
+    ctx.fillStyle = 'rgba(8,10,14,0.55)';
+    ctx.beginPath();
+    ctx.arc(w / 2, w / 2, w / 2 - 1, 0, Math.PI * 2);
+    ctx.fill();
+    if (road.length < 2) return;
+    const span = 180;
+    const sx = (x: number) => ((x - bike.x) / span) * (w * 0.42) + w / 2;
+    const sz = (z: number) => ((z - bike.z) / span) * (w * 0.42) + w / 2;
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx(road[0]!.x), sz(road[0]!.z));
+    for (let i = 1; i < road.length; i++) ctx.lineTo(sx(road[i]!.x), sz(road[i]!.z));
+    ctx.stroke();
+    if (gate) {
+      ctx.fillStyle = '#ffb428';
+      ctx.fillRect(sx(gate.x) - 2, sz(gate.z) - 2, 4, 4);
+    }
+    if (ghost) {
+      ctx.fillStyle = '#6fd3ff';
+      ctx.beginPath();
+      ctx.arc(sx(ghost.x), sz(ghost.z), 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.save();
+    ctx.translate(sx(bike.x), sz(bike.z));
+    ctx.rotate(-bike.heading);
+    ctx.fillStyle = '#ff5a1f';
+    ctx.beginPath();
+    ctx.moveTo(0, -5);
+    ctx.lineTo(4, 5);
+    ctx.lineTo(-4, 5);
+    ctx.fill();
+    ctx.restore();
   }
 
   /** Transient status line (model loading etc.). Pass null to hide. */

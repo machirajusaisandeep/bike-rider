@@ -79,7 +79,7 @@ async function advance(seconds) {
 
 async function open(url) {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('canvas', { timeout: 20_000 });
+  await page.waitForSelector('#app > canvas', { timeout: 20_000 });
   await page.waitForFunction(() => !!window.__bikeRider, null, { timeout: 20_000 });
   await page.waitForTimeout(headed ? 1500 : 800);
 }

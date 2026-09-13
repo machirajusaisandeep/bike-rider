@@ -105,14 +105,14 @@ The first screen is a character creator. Pick a male or female rider, then:
 - **Riding gear**: one item per slot from a catalogue that follows Royal Enfield's riding-gear
   lines.
 
-| Slot         | Options (points)                                                                                               |
-| ------------ | -------------------------------------------------------------------------------------------------------------- |
-| Helmet       | Lightwing Open Face (20), Lightwing White Flame (20), Streetwind Full Face (30)                                |
-| Jacket       | Streetwind V2 mesh (12 torso + 6 arms), Windfarer touring (16 + 8), Explorer V3 with KNOX CE2 armour (20 + 10) |
-| Gloves       | Intrepid (6), Cragsman (8), Stalwart (10)                                                                      |
-| Elbow guards | RE × KNOX elbow cups (+5 arms)                                                                                 |
-| Knee guards  | Soft knee sleeves (10), Conqueror CE Level 2 (18)                                                              |
-| Footwear     | Riding sneakers (5), ankle riding boots (9), adventure boots (12)                                              |
+| Slot         | Options (points)                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------- |
+| Helmet       | Jet MLG Neo open face (20), Lightwing Rewing grey (30), Lightwing Checks matt black / red (30)        |
+| Jacket       | Streetwind V2 black mesh (12 torso + 6 arms), Windfarer V2 green (16 + 8), Explorer V3 grey (20 + 10) |
+| Gloves       | Intrepid (6), Cragsman (8), Stalwart (10)                                                             |
+| Elbow guards | Generic strap-on elbow guards (+5 arms)                                                               |
+| Knee guards  | Knox Challenger Level 1 (10), Knox Conqueror Level 2 (18)                                             |
+| Footwear     | Cabo WP riding sneaker (5), Marshall boots (9), generic tall touring boots (12)                       |
 
 **Protection score** (`src/game/gear.ts`) is the sum of covered body zones, capped per zone:
 head 30, torso 20, arms 10, hands 10, knees 18, feet 12, total 100. Items that cover the same
@@ -132,12 +132,18 @@ Blender 5.x:
    0.28 H, ankles 0.05 H).
 2. Add face shape keys, exported as glTF morph targets so presets blend live in the browser.
 3. Extract body regions into fitted shells that inherit the skin weights: hair styles, brows,
-   beards, and every gear item (helmets with visor, jackets with collar / shoulder cups / back
-   plate, short and gauntlet gloves, knee sleeves and hard shells with shin plate, three boot
-   heights). Shirt and jeans are painted as material regions of the body itself.
-4. Bake `Stand` and `Ride` poses as single-frame clips and export a Draco GLB per body
-   (`public/models/rider_male.glb`, `rider_female.glb`, ~1.7 MB each). Face and hair thumbnails
-   for the grid are rendered with Workbench into `public/previews/rider/`.
+   beards and gloves. Shirt and jeans are painted as material regions of the body itself.
+4. Wrap the wardrobe (`scripts/blender/rider_wardrobe.py`) around measured body cross-sections:
+   every ring takes the body's largest radius per angular sector plus a fabric ease and is
+   smoothed like tensioned cloth, so the same jacket, knee plate or boot last fits both bodies.
+   Each Royal Enfield product is its own mesh with its panel layout and catalogue colours baked
+   into `<garment>.<role>` materials (mesh, textile, Cordura, leather); the browser only adds
+   textile textures by role. Helmets are built from a real profile: ellipsoid cap, tapering
+   cheeks, forward chin bar with vent and wordmark on the full face, a jet rim on the open face,
+   rectangular eye port with gasket, curved visor on pivots, and separate colourway appliques.
+5. Bake `Stand` and `Ride` poses as single-frame clips and export a Draco GLB per body
+   (`public/models/rider_male.glb`, `rider_female.glb`, ~2.6 to 2.9 MB each). Face and hair
+   thumbnails for the grid are rendered with Workbench into `public/previews/rider/`.
 
 To rebuild after changing the script or presets (`src/game/rider-presets.json`):
 
@@ -148,9 +154,12 @@ To rebuild after changing the script or presets (`src/game/rider-presets.json`):
   src/game/rider-presets.json public/previews/rider
 ```
 
-`scripts/blender/check_pose.py` renders a GLB in both poses for a quick visual check. In the
-browser, `src/game/Rider.ts` loads the GLB, toggles shells, sets morph influences and material
-colours, and switches between the standing pose (character screen) and the riding pose.
+`scripts/blender/check_pose.py` renders a GLB in both poses for a quick visual check, and
+`scripts/blender/render_rider.py` renders a chosen loadout from several angles (front, quarter,
+head, feet, ...) with EEVEE so a wardrobe change can be inspected without the browser. In the
+browser, `src/game/Rider.ts` loads the GLB, toggles shells, sets morph influences, helmet paint
+and textile textures, and switches between the standing pose (character screen) and the riding
+pose.
 
 ![Riding gear tab](docs/rider-full-gear.png)
 
@@ -295,7 +304,7 @@ VITE_PORTAL=poki|crazygames   # portal SDK hooks (ads, gameplay events)
 VITE_PUBLIC_BUILD=1           # never reference the local RE model
 ```
 
-See `docs/LAUNCH.md` for the deploy and submission checklist and `ROADMAP.md` for the plan.
+See `docs/LAUNCH.md` for the deploy and submission checklist, `ROADMAP.md` for the plan, and `docs/JUICE.md` for the next feel/traffic/audio pass.
 
 ## Dev aids
 
