@@ -26,6 +26,7 @@ import {
 import { SCENES, type SceneDef, type SceneId } from '../world/scenes';
 import type { GameMode } from '../game/Run';
 import { t } from '../core/i18n';
+import { RIDER_ASSET_VERSION } from '../core/config';
 import { createElement, RotateCcw, RotateCw, Scan, ArrowRight } from 'lucide';
 
 export type MenuStep = 'rider' | 'scene';
@@ -231,6 +232,14 @@ export class Menu {
         <aside class="char-side">
           <div class="rider-identity"><span class="rider-identity-label">RIDER PROFILE</span><strong class="rider-name"></strong><span class="rider-outfit"></span></div>
           <div class="rider-view-tools" aria-label="Rider view"></div>
+          <div class="safety-bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Safety">
+            <div class="safety-bar-head"><span class="safety-bar-label" data-i18n="rider.safety">Safety</span><b class="safety-bar-num">0<small>%</small></b></div>
+            <div class="safety-bar-track">
+              <i class="safety-tick" style="bottom:25%"></i><i class="safety-tick" style="bottom:50%"></i><i class="safety-tick" style="bottom:75%"></i>
+              <div class="safety-bar-fill"></div>
+            </div>
+            <div class="safety-bar-note"></div>
+          </div>
           <div class="protect-card compact">
             <div class="loadout-caption">LOADOUT <span>Game points</span></div>
             <div class="protect-head">
@@ -484,7 +493,7 @@ export class Menu {
       b.className = 'thumb';
       b.dataset.face = f.id;
       b.title = f.region ?? f.name;
-      b.innerHTML = `<img src="${base}previews/rider/face_${this.rider.body}_${f.id}.png" alt="${f.name}" loading="lazy"/><span>${f.name}</span>`;
+      b.innerHTML = `<img src="${base}previews/rider/face_${this.rider.body}_${f.id}.png?v=${RIDER_ASSET_VERSION}" alt="${f.name}" loading="lazy"/><span>${f.name}</span>`;
       b.addEventListener('click', () => this.change({ face: f.id }));
       faces.appendChild(b);
     }
@@ -496,7 +505,7 @@ export class Menu {
       b.className = 'thumb';
       b.dataset.hair = h;
       const label = t(`hair.${h}`) !== `hair.${h}` ? t(`hair.${h}`) : (HAIR_NAMES[h] ?? h);
-      b.innerHTML = `<img src="${base}previews/rider/hair_${this.rider.body}_${h}.png" alt="${label}" loading="lazy"/><span>${label}</span>`;
+      b.innerHTML = `<img src="${base}previews/rider/hair_${this.rider.body}_${h}.png?v=${RIDER_ASSET_VERSION}" alt="${label}" loading="lazy"/><span>${label}</span>`;
       b.addEventListener('click', () => this.change({ hair: h }));
       hairs.appendChild(b);
     }
@@ -588,6 +597,20 @@ export class Menu {
       ? `${p.exposed.length} gaps`
       : 'all zones equipped';
     this.exposedEl.classList.toggle('ok', p.exposed.length === 0);
+    // Safety bar beside the character: fills with the protection score to nudge full gear.
+    const bar = this.riderPanel.querySelector<HTMLElement>('.safety-bar');
+    if (bar) {
+      const level = p.total >= 75 ? 'high' : p.total >= 45 ? 'mid' : 'low';
+      bar.dataset.level = level;
+      bar.setAttribute('aria-valuenow', String(p.total));
+      bar.querySelector<HTMLElement>('.safety-bar-fill')!.style.height = `${p.total}%`;
+      bar.querySelector<HTMLElement>('.safety-bar-num')!.innerHTML = `${p.total}<small>%</small>`;
+      bar.querySelector<HTMLElement>('.safety-bar-note')!.textContent = p.exposed.length
+        ? t('rider.safety.exposed', {
+            zones: p.exposed.map((z) => ZONE_LABEL[z].toLowerCase()).join(', '),
+          })
+        : t('rider.safety.full');
+    }
   }
 
   get riderConfig(): RiderConfig {

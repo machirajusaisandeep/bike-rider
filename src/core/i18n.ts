@@ -19,6 +19,9 @@ type Dict = Record<string, string>;
 
 const en: Dict = {
   // rider (character screen)
+  'rider.safety': 'Safety',
+  'rider.safety.full': 'Fully protected',
+  'rider.safety.exposed': 'Exposed: {zones}',
   'rider.tab.face': 'Face',
   'rider.tab.hair': 'Hair',
   'rider.tab.gear': 'Riding gear',
@@ -155,6 +158,9 @@ const en: Dict = {
 };
 
 const hi: Dict = {
+  'rider.safety': 'सुरक्षा',
+  'rider.safety.full': 'पूरी सुरक्षा',
+  'rider.safety.exposed': 'असुरक्षित: {zones}',
   'rider.tab.face': 'चेहरा',
   'rider.tab.hair': 'बाल',
   'rider.tab.gear': 'राइडिंग गियर',
@@ -272,6 +278,9 @@ const hi: Dict = {
 };
 
 const kn: Dict = {
+  'rider.safety': 'ಸುರಕ್ಷತೆ',
+  'rider.safety.full': 'ಪೂರ್ಣ ರಕ್ಷಣೆ',
+  'rider.safety.exposed': 'ರಕ್ಷಣೆಯಿಲ್ಲ: {zones}',
   'rider.tab.face': 'ಮುಖ',
   'rider.tab.hair': 'ಕೂದಲು',
   'rider.tab.gear': 'ರೈಡಿಂಗ್ ಗೇರ್',
@@ -389,6 +398,9 @@ const kn: Dict = {
 };
 
 const ta: Dict = {
+  'rider.safety': 'பாதுகாப்பு',
+  'rider.safety.full': 'முழு பாதுகாப்பு',
+  'rider.safety.exposed': 'பாதுகாப்பில்லை: {zones}',
   'rider.tab.face': 'முகம்',
   'rider.tab.hair': 'முடி',
   'rider.tab.gear': 'ரைடிங் கியர்',
@@ -506,6 +518,9 @@ const ta: Dict = {
 };
 
 const ml: Dict = {
+  'rider.safety': 'സുരക്ഷ',
+  'rider.safety.full': 'പൂർണ്ണ സംരക്ഷണം',
+  'rider.safety.exposed': 'സംരക്ഷണമില്ല: {zones}',
   'rider.tab.face': 'മുഖം',
   'rider.tab.hair': 'മുടി',
   'rider.tab.gear': 'റൈഡിംഗ് ഗിയർ',

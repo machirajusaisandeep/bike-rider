@@ -1,4 +1,11 @@
 /**
+ * Rider model and preview files keep stable names in public/, so browsers that visited an
+ * earlier deploy would keep serving the old GLB (old mesh names, so gear vanished). Bump this
+ * whenever `scripts/blender/build_rider.py` output is copied into public/.
+ */
+export const RIDER_ASSET_VERSION = '2026-09-13a';
+
+/**
  * Central tuning knobs. Everything gameplay-related lives here so the feel can be
  * adjusted without hunting through systems.
  */

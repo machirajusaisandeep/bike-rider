@@ -73,6 +73,20 @@ async function canvasCheck(name) {
 }
 const pixels = { desktop: await canvasCheck('desktop') };
 check(
+  'Safety bar mirrors the protection score',
+  await page.evaluate(() => {
+    const bar = document.querySelector('.safety-bar');
+    const fill = document.querySelector('.safety-bar-fill');
+    const score = Number(document.querySelector('.protect-num')?.textContent);
+    return (
+      !!bar &&
+      getComputedStyle(bar).display !== 'none' &&
+      Number(bar.getAttribute('aria-valuenow')) === score &&
+      fill?.style.height === `${score}%`
+    );
+  }),
+);
+check(
   'Main action fits desktop',
   await page
     .locator('.btn-next')

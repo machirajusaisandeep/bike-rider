@@ -3559,3 +3559,105 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- character screen: safety bar beside the rider ------------------------------------- */
+.safety-bar {
+  display: none;
+}
+.menu.step-rider .safety-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: absolute;
+  left: 34px;
+  top: 50%;
+  transform: translateY(-46%);
+  width: 92px;
+  pointer-events: none;
+  color: #e9edf0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.safety-bar-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.safety-bar-label {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.safety-bar-num {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.safety-bar-num small {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+  margin-left: 1px;
+}
+.safety-bar-track {
+  position: relative;
+  width: 16px;
+  height: 250px;
+  border-radius: 10px;
+  background: rgba(14, 18, 22, 0.55);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 6px 18px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+.safety-tick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.28);
+  z-index: 2;
+}
+.safety-bar-fill {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  height: 0;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #4cc38a, #2f9d6a);
+  box-shadow: 0 0 12px rgba(76, 195, 138, 0.45);
+  transition:
+    height 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.3s,
+    box-shadow 0.3s;
+}
+.safety-bar[data-level='mid'] .safety-bar-fill {
+  background: linear-gradient(180deg, #f0b04a, #d98b2a);
+  box-shadow: 0 0 12px rgba(240, 176, 74, 0.4);
+}
+.safety-bar[data-level='low'] .safety-bar-fill {
+  background: linear-gradient(180deg, #ef5a5f, #c53a42);
+  box-shadow: 0 0 12px rgba(239, 90, 95, 0.4);
+}
+.safety-bar-note {
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  max-width: 92px;
+  opacity: 0.85;
+}
+.safety-bar[data-level='low'] .safety-bar-note {
+  color: #ffb3b6;
+}
+.safety-bar[data-level='mid'] .safety-bar-note {
+  color: #ffd9a3;
+}
+@media (max-width: 900px) {
+  .menu.step-rider .safety-bar {
+    display: none;
+  }
+}

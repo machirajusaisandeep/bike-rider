@@ -124,7 +124,10 @@ Mesh names: `gear_helmet_{open,full}`, `gear_helmet_visor_{open,full}`, `gear_he
 A fifth argument `src/game/rider-presets.json:<faceId>` applies that preset's morphs to every
 shape-keyed mesh. The build writes baked textures to `$RIDER_SCRATCH` (default
 `<out dir>/.rider-bake`); build into a scratch directory and only copy `rider_*.glb` and the
-previews into `public/` once the head renders look right.
+previews into `public/` once the head renders look right. Then bump `RIDER_ASSET_VERSION` in
+`src/core/config.ts`: the files keep their names, and the query string is what stops browsers
+from serving a cached model from an earlier deploy (which showed up as gear missing after a
+body swap).
 
 ## Verification
 

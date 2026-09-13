@@ -15,7 +15,7 @@ import {
 } from 'three';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACO_DECODER_PATH } from '../core/config';
+import { DRACO_DECODER_PATH, RIDER_ASSET_VERSION } from '../core/config';
 import {
   browAlphaTexture,
   irisTexture,
@@ -327,7 +327,9 @@ export class Rider {
       draco.setDecoderPath(base + DRACO_DECODER_PATH);
       const loader = new GLTFLoader();
       loader.setDRACOLoader(draco);
-      const gltf = await loader.loadAsync(`${base}models/rider_${body}.glb`);
+      const gltf = await loader.loadAsync(
+        `${base}models/rider_${body}.glb?v=${RIDER_ASSET_VERSION}`,
+      );
       draco.dispose();
       const scene = gltf.scene;
       const meshes = new Map<string, Object3D>();
